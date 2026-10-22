@@ -13,15 +13,10 @@ export const LEADERBOARD_COLUMNS_OFFLINE = [
   { id: "ap-potential", label: "AP Potential" },
 ];
 
-// for this category, ids mean the question id that it'll try to get the info from
-export const LEADERBOARD_COLUMNS_SCOUTED = [
-  { id: "broke", label: "Bot Reliability (%)" },
-  { id: "accuracy", label: "Bot Accuracy (%)" },
-  { id: "skill", label: "Avg Driver Skill (of 10)" },
-  { id: "contribution", label: "Avg Score Contribution %" },
-  { id: "shooter_speed", label: "Avg Fuel/Second" },
-  { id: "AFC", label: "Avg Fuel Contribution" },
-  { id: "AAFC", label: "ESTIMATED Auton Fuel" },
+// derived from other stats in createTeam, not questions. only shown when the question they need exists
+const LEADERBOARD_COLUMNS_DERIVED = [
+  { id: "AFC", label: "Avg Fuel Contribution", needs: "contribution" },
+  { id: "AAFC", label: "ESTIMATED Auton Fuel", needs: "contribution" },
 ];
 export let LEADERBOARD_COLUMNS = [];
 
@@ -59,12 +54,26 @@ function getQuestionsFlat() {
   return sorted;
 }
 
+// every question with a leaderboard "lb-header" gets a Local column (in question order), labeled with that header.
+// ids are the question id that it'll try to get the info from
+function getScoutedColumns() {
+  let qFlat = {};
+  try {
+    qFlat = getQuestionsFlat();
+  } catch {} // no questions cached yet
+  const columns = Object.values(qFlat)
+    .filter((question) => question?.leaderboard?.["lb-header"])
+    .map((question) => ({ id: question.id, label: question.leaderboard["lb-header"] }));
+  const derived = LEADERBOARD_COLUMNS_DERIVED.filter((col) => qFlat[col.needs]).map(({ id, label }) => ({ id, label }));
+  return [...columns, ...derived];
+}
+
 async function reorganizeLeaderboardData() {
   if (useOnlineLeaderboardLayout) {
     var evRaw = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`)) ?? {};
     // custom (OCCRA) events have no TBA rankings, build them from the schedule instead
     const raw = evRaw.rankings ?? (isCustomEventKey(eventKey) ? computeRankings(evRaw.mData) : await TBA_GET(`/event/${eventKey}/rankings`));
-    if (!raw || !raw.rankings) return { tbaColumns: [], scoutedColumns: LEADERBOARD_COLUMNS_SCOUTED, rows: [] };
+    if (!raw || !raw.rankings) return { tbaColumns: [], scoutedColumns: getScoutedColumns(), rows: [] };
     evRaw.rankings = raw;
     localStorage.setItem(`eventCache_${eventKey}`, JSON.stringify(evRaw));
 
@@ -85,6 +94,7 @@ async function reorganizeLeaderboardData() {
     }));
 
     const tbaColumns = [...sortCols, ...extraCols];
+    const scoutedColumns = getScoutedColumns();
 
     const rows = raw.rankings.map((entry) => {
       const stats = { rank: entry.rank };
@@ -97,7 +107,7 @@ async function reorganizeLeaderboardData() {
         stats[col.id] = val != null ? +val.toFixed(col.precision) : "-";
       });
       const qFlat = getQuestionsFlat();
-      LEADERBOARD_COLUMNS_SCOUTED.forEach((col) => {
+      scoutedColumns.forEach((col) => {
         //scoutedDataPTAvgs(Flat) is a thing so i can ez yoink it straight from there
         const teamID = entry.team_key.slice(3);
         const question = qFlat[col.id] || {};
@@ -130,13 +140,13 @@ async function reorganizeLeaderboardData() {
       return { teamKey: entry.team_key, stats };
     });
 
-    return { tbaColumns, scoutedColumns: LEADERBOARD_COLUMNS_SCOUTED, rows };
+    return { tbaColumns, scoutedColumns, rows };
   } else {
     const raw = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`)).eventDetails;
 
     const scoutedData = raw?.data;
     const questionLayout = raw?.questions; // to get the names of the categories n stuff
-    return { tbaColumns: LEADERBOARD_COLUMNS_OFFLINE, scoutedColumns: LEADERBOARD_COLUMNS_SCOUTED, rows: [] };
+    return { tbaColumns: LEADERBOARD_COLUMNS_OFFLINE, scoutedColumns: getScoutedColumns(), rows: [] };
   }
 }
 
