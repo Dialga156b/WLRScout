@@ -556,9 +556,27 @@ submitChangesBtn.addEventListener("click", async () => {
   const categories = cache?.questionsData?.data;
   if (!categories) return;
 
+  // ipad safari can show confirm() invisibly (but still blocking) if the keyboard is closing at the same time.
+  // blur whatever's focused and give the keyboard a moment to go away first
+  document.activeElement?.blur();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+
   if (!confirm("Submit these question changes? This updates the live questions for everyone.")) return;
 
-  await questionDB("POST", categories);
+  const btnHTML = submitChangesBtn.innerHTML;
+  submitChangesBtn.disabled = true;
+  submitChangesBtn.textContent = "Saving...";
+  try {
+    const result = await questionDB("POST", categories);
+    console.log(result);
+    alert("Questions saved.");
+  } catch (e) {
+    console.error("Failed to save questions:", e);
+    alert(`Couldn't save questions: ${e.message}`);
+  } finally {
+    submitChangesBtn.disabled = false;
+    submitChangesBtn.innerHTML = btnHTML;
+  }
 });
 
 deleteChangesBtn.addEventListener("click", async () => {

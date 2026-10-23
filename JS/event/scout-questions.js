@@ -291,7 +291,7 @@ async function init() {
     URLSP.delete("setupComplete");
     history.replaceState(null, "", `${location.pathname}?${URLSP}`);
     showPopup(true, "Ready for Offline", "You're all set!\nAdd this page to your home screen to be ready for game day <b>(share > more > add to home screen)</b>.\n\nIn the mean time, get used to the questions shown here. This prompt won't be shown again.");
-  } else if (forceRefresh && cache.questionsData.version) {
+  } else if (forceRefresh && cache.questionsData.version && String(cache.questionsData.version) !== String(oldVer)) {
     showPopup(true, "Notice", `Questionnaire has been updated:\n\n<b>v${oldVer} -> v${cache.questionsData.version}</b>\n\nPlease confirm your responses before submitting.`);
   }
 

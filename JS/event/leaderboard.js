@@ -71,8 +71,9 @@ function getScoutedColumns() {
 async function reorganizeLeaderboardData() {
   if (useOnlineLeaderboardLayout) {
     var evRaw = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`)) ?? {};
-    // custom (OCCRA) events have no TBA rankings, build them from the schedule instead
-    const raw = evRaw.rankings ?? (isCustomEventKey(eventKey) ? computeRankings(evRaw.mData) : await TBA_GET(`/event/${eventKey}/rankings`));
+    // custom (OCCRA) events have no TBA rankings, build them from the schedule + scouting instead.
+    // always recomputed (it's cheap) so it's never stuck on rankings from an older cache
+    const raw = isCustomEventKey(eventKey) ? computeRankings(evRaw.mData, evRaw.scoutedData) : (evRaw.rankings ?? (await TBA_GET(`/event/${eventKey}/rankings`)));
     if (!raw || !raw.rankings) return { tbaColumns: [], scoutedColumns: getScoutedColumns(), rows: [] };
     evRaw.rankings = raw;
     localStorage.setItem(`eventCache_${eventKey}`, JSON.stringify(evRaw));
@@ -270,10 +271,12 @@ export async function loadLeaderboard() {
 
   const { tbaColumns, scoutedColumns, rows } = await reorganizeLeaderboardData();
 
+  // OCCRA's "TBA" columns are our own computed wins/scores, so they get a different name
   const lbSets = [
-    { label: "TBA", columns: tbaColumns },
+    { label: isCustomEventKey(eventKey) ? "Results" : "TBA", columns: tbaColumns },
     { label: "Local", columns: scoutedColumns },
-  ].filter(({ label }) => !(label === "TBA" && isCustomEventKey(eventKey))); // OCCRA has no TBA data to show
+  ].filter(({ columns }) => columns.length > 0);
+  if (lbSets.length === 0) lbSets.push({ label: "Local", columns: scoutedColumns });
   document.getElementById("nextLbBtn").classList.toggle("hidden", lbSets.length < 2);
   let currentLbIndex = 0;
 

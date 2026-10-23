@@ -1,4 +1,4 @@
-import { newEventCache } from "../utils.js";
+import { newEventCache, isCustomEventKey, getEstimatedMatchResults } from "../utils.js";
 import { loadLeaderboard } from "./leaderboard.js";
 import { questionDB } from "../DB.js";
 const eventNameHeader = document.getElementById("eventNameHeader");
@@ -21,7 +21,7 @@ var currentPage = "R";
 const CACHE_KEY = `eventCache_${eventKey}`;
 localStorage.setItem("currentEventKey", eventKey);
 
-async function renderMatches(mData) {
+async function renderMatches(mData, scoutedData) {
   const dividerEl = document.querySelector("#ls-divider");
   const matchtemplate = document.getElementById("ml-template");
   var lastMatchType = "";
@@ -29,8 +29,12 @@ async function renderMatches(mData) {
 
   var delay = 0;
 
+  // OCCRA has no real scores, so scores + per-team points get estimated from scouting (OCCRA_POINT_VALUES in utils)
+  const estimatedResults = isCustomEventKey(eventKey) ? getEstimatedMatchResults(mData, scoutedData) : new Map();
+
   for (const match of mData) {
     const matchEl = matchtemplate.cloneNode(true);
+    const estimated = estimatedResults.get(match.key);
     const matchIdEl = matchEl.querySelector("#match-id");
 
     // dividers for quals, semis, finals
@@ -66,20 +70,40 @@ async function renderMatches(mData) {
         redTeamEl.remove();
         continue;
       }
-      blueTeamEl.textContent = (match.alliances.blue.team_keys[i] || "").slice(3);
-      redTeamEl.textContent = (match.alliances.red.team_keys[i] || "").slice(3);
+      for (const [teamEl, teamKey] of [
+        [blueTeamEl, match.alliances.blue.team_keys[i] || ""],
+        [redTeamEl, match.alliances.red.team_keys[i] || ""],
+      ]) {
+        teamEl.textContent = teamKey.slice(3);
+        teamEl.dataset.team = teamKey.slice(3); // search reads this so domnt remove
+        const points = estimated?.teamPoints[teamKey];
+        if (points !== undefined) {
+          const pointsEl = document.createElement("span");
+          pointsEl.className = "team-pts";
+          //pointsEl.display = "none";
+          pointsEl.textContent = `${Math.round(points)} pts`;
+          teamEl.appendChild(pointsEl);
+        }
+      }
     }
     matchEl.classList.toggle("two-per-alliance", teamsPerAlliance === 2);
 
     const redScoreEl = matchEl.querySelector("#match-red-score");
     const blueScoreEl = matchEl.querySelector("#match-blue-score");
 
-    redScoreEl.textContent = `${match.alliances.red.score === (-1 || null) ? "-" : match.alliances.red.score}`;
-    blueScoreEl.textContent = `${match.alliances.blue.score === (-1 || null) ? "-" : match.alliances.blue.score}`;
+    if (estimated) {
+      // "~" since these are estimates from scouting, not real scores
+      redScoreEl.textContent = `~${Math.round(estimated.red)}`;
+      blueScoreEl.textContent = `~${Math.round(estimated.blue)}`;
+    } else {
+      redScoreEl.textContent = `${match.alliances.red.score === (-1 || null) ? "-" : match.alliances.red.score}`;
+      blueScoreEl.textContent = `${match.alliances.blue.score === (-1 || null) ? "-" : match.alliances.blue.score}`;
+    }
 
     const hasScores = match.alliances.red.score !== -1 && match.alliances.blue.score !== -1;
     // _scouted: OCCRA matches count as played once scouted, see markScoutedMatches in utils
     const isCompleted = match._scouted || hasScores;
+    const winningAlliance = estimated ? estimated.winner : match.winning_alliance;
 
     if (isCompleted) {
       matchEl.querySelector("#match-status").setAttribute("name", "cloud-done-outline");
@@ -92,10 +116,10 @@ async function renderMatches(mData) {
       }
     }
 
-    if (match.winning_alliance === "blue") {
+    if (winningAlliance === "blue") {
       matchEl.classList.add("theme-blue-victory");
       blueScoreEl.classList.add("winner");
-    } else if (match.winning_alliance === "red") {
+    } else if (winningAlliance === "red") {
       matchEl.classList.add("theme-red-victory");
       redScoreEl.classList.add("winner");
     } else {
@@ -176,14 +200,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const cachedBundle = localStorage.getItem(CACHE_KEY);
 
-    let mData, eventDetails;
+    let mData, eventDetails, scoutedData;
 
     if (cachedBundle) {
       console.log("Using cached event bundle");
-      ({ mData, eventDetails } = JSON.parse(cachedBundle));
+      ({ mData, eventDetails, scoutedData } = JSON.parse(cachedBundle));
     } else {
       console.log("No cached data, fetching from TBA");
-      ({ mData, eventDetails } = await newEventCache(eventKey, () => questionDB("GET")));
+      ({ mData, eventDetails, scoutedData } = await newEventCache(eventKey, () => questionDB("GET")));
     }
     const eventName = `${eventDetails.year} ${eventDetails.district?.abbreviation?.toUpperCase() || eventDetails.short_name} ${eventDetails.short_name} Event`;
     eventNameHeader.textContent = eventName;
@@ -200,7 +224,7 @@ document.addEventListener("DOMContentLoaded", () => {
       noDice.classList.remove("hidden");
     }
 
-    renderMatches(mData);
+    renderMatches(mData, scoutedData);
     loadLeaderboard();
   })();
 });
@@ -220,7 +244,7 @@ function search() {
       return;
     }
     const teams = matchEl.querySelectorAll("#m-blue th, #m-red th");
-    const found = Array.from(teams).some((th) => th.textContent == query);
+    const found = Array.from(teams).some((th) => (th.dataset.team ?? th.textContent) == query);
     matchEl.style.display = found ? "" : "none";
   });
 }
@@ -232,9 +256,12 @@ teamSearchInput.addEventListener("focus", () => {
   }, 50);
 });
 
-offlineScoutBtn.onclick = function () {
-  location.href = `../HTML/scout.html?status=offline&eventKey=${eventKey}`;
-};
+// checked so the rest of the file still runs if the button ever gets removed from the html
+if (offlineScoutBtn) {
+  offlineScoutBtn.onclick = function () {
+    location.href = `../HTML/scout.html?status=offline&eventKey=${eventKey}`;
+  };
+}
 
 /* [
   {

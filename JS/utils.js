@@ -31,25 +31,129 @@ async function getCustomEvents() {
   }
 }
 
+// OCCRA scoring changes every season SO THIS IS HARDCODED FOR NOW!!!! UPDATE THIS EACH YEAR (and if question ids change).
+// question ids have points. counters are points per ball, toggles are points if true. anything not listed is worth 0
+const OCCRA_POINT_VALUES = {
+  //moved: 2,
+  auton_high: 3,
+  auton_low: 2,
+  teleop_high: 2,
+  teleop_low: 1,
+};
+const OCCRA_WON_QUESTION = "won"; // "Alliance Won?" toggle
+const OCCRA_NOSHOW_QUESTION = "noshow";
+
+const isYes = (v) => v === true || v === "true";
+const isNo = (v) => v === false || v === "false";
+
+// estimated points one robot scored in one match, from one scouting submission
+function occraTeamPoints(answers) {
+  if (isYes(answers[OCCRA_NOSHOW_QUESTION])) return 0;
+  let points = 0;
+  for (const [questionID, value] of Object.entries(OCCRA_POINT_VALUES)) {
+    const answer = answers[questionID];
+    if (isYes(answer)) points += value;
+    else if (!isNo(answer) && answer !== "_IGNORE" && !isNaN(Number(answer))) points += Number(answer) * value;
+  }
+  return points;
+}
+
+// scouting rows -> Map(matchNumber -> Map(teamNumber -> [answers, ...])), answers flattened across categories
+function collectScoutedMatches(scoutedRows) {
+  const matches = new Map();
+  for (const row of Array.isArray(scoutedRows) ? scoutedRows : []) {
+    try {
+      const data = JSON.parse(row.data)?.questions?.data ?? {};
+      const answers = Object.assign({}, ...Object.values(data));
+      const matchNum = Number(String(answers.match ?? "").trim());
+      const team = String(Number(String(answers.team ?? "").trim()));
+      if (!matchNum || team === "NaN" || team === "0") continue;
+      if (!matches.has(matchNum)) matches.set(matchNum, new Map());
+      const teams = matches.get(matchNum);
+      if (!teams.has(team)) teams.set(team, []);
+      teams.get(team).push(answers);
+    } catch {}
+  }
+  return matches;
+}
+
+// { blue, red, winner, teamPoints, estimated } for a match, or null if it hasn't been played (no scores and nobody scouted it).
+// real scores win if they exist. otherwise the scouts' "Alliance Won?" answers vote, and estimated points break ties.
+// teamPoints is { "frc308": 12, ... } for each scouted team
+function getMatchResult(match, scoutedMatches) {
+  const { blue, red } = match.alliances;
+  const hasScores = blue.score >= 0 && red.score >= 0;
+  const submissions = scoutedMatches.get(Number(match.match_number));
+  if (!hasScores && !submissions) return null;
+
+  const score = { blue: 0, red: 0 };
+  const teamPoints = {}; // filled even when real scores exist, so the leaderboard can use each team's own points
+  let votes = 0; // positive = blue won
+  for (const [side, alliance] of [
+    ["blue", blue],
+    ["red", red],
+  ]) {
+    for (const teamKey of alliance.team_keys) {
+      const teamSubs = submissions?.get(teamKey?.slice(3));
+      if (!teamSubs) continue;
+      // more than one scout on the same robot gets averaged
+      teamPoints[teamKey] = teamSubs.reduce((sum, answers) => sum + occraTeamPoints(answers), 0) / teamSubs.length;
+      score[side] += teamPoints[teamKey];
+      for (const answers of teamSubs) {
+        const vote = isYes(answers[OCCRA_WON_QUESTION]) ? 1 : isNo(answers[OCCRA_WON_QUESTION]) ? -1 : 0;
+        votes += side === "blue" ? vote : -vote;
+      }
+    }
+  }
+
+  if (hasScores) return { blue: blue.score, red: red.score, winner: match.winning_alliance || null, teamPoints, estimated: false };
+
+  let winner = votes > 0 ? "blue" : votes < 0 ? "red" : null;
+  if (!winner && score.blue !== score.red) winner = score.blue > score.red ? "blue" : "red";
+  return { ...score, winner, teamPoints, estimated: true };
+}
+
+// match key -> getMatchResult, for matches whose result is estimated from scouting (OCCRA). used by the match list
+export function getEstimatedMatchResults(mData, scoutedRows) {
+  const scoutedMatches = collectScoutedMatches(scoutedRows);
+  const results = new Map();
+  for (const match of Array.isArray(mData) ? mData : []) {
+    if (!match.alliances?.blue || !match.alliances?.red) continue;
+    const result = getMatchResult(match, scoutedMatches);
+    if (result?.estimated) results.set(match.key, result);
+  }
+  return results;
+}
+
 // TBA-shaped rankings built from played matches, since TBA has nothing for custom events.
-// every scheduled team gets an entry (even with 0 played) so the leaderboard lists them before results exist
-export function computeRankings(mData) {
+// every scheduled team gets an entry (even with 0 played) so the leaderboard lists them before results exist.
+// ranked by wins, then avg points. points are only the team's OWN scouted points (OCCRA_POINT_VALUES), not the
+// alliance score, so a team doesn't look better just because its partners were good
+export function computeRankings(mData, scoutedRows = []) {
+  const scoutedMatches = collectScoutedMatches(scoutedRows);
   const teams = {};
   for (const match of Array.isArray(mData) ? mData : []) {
     const blue = match.alliances?.blue;
     const red = match.alliances?.red;
     if (!blue || !red) continue;
-    const played = blue.score >= 0 && red.score >= 0;
+    const result = getMatchResult(match, scoutedMatches);
 
-    for (const [side, alliance] of [["blue", blue], ["red", red]]) {
+    for (const [side, alliance] of [
+      ["blue", blue],
+      ["red", red],
+    ]) {
       for (const teamKey of alliance.team_keys) {
         if (!teamKey) continue;
-        const t = (teams[teamKey] ??= { wins: 0, losses: 0, ties: 0, played: 0, totalScore: 0 });
-        if (!played) continue;
+        const t = (teams[teamKey] ??= { wins: 0, losses: 0, ties: 0, played: 0, totalPoints: 0, scouted: 0 });
+        if (!result) continue;
         t.played++;
-        t.totalScore += alliance.score;
-        if (!match.winning_alliance) t.ties++;
-        else if (match.winning_alliance === side) t.wins++;
+        // a match where this team wasn't scouted still counts for wins, just not for the points average
+        if (result.teamPoints[teamKey] !== undefined) {
+          t.scouted++;
+          t.totalPoints += result.teamPoints[teamKey];
+        }
+        if (!result.winner) t.ties++;
+        else if (result.winner === side) t.wins++;
         else t.losses++;
       }
     }
@@ -62,7 +166,7 @@ export function computeRankings(mData) {
       matches_played: t.played,
       record: { wins: t.wins, losses: t.losses, ties: t.ties },
       // [1] is read as the avg match score by the leaderboard's AFC column
-      sort_orders: [t.wins, t.played ? t.totalScore / t.played : 0, t.totalScore],
+      sort_orders: [t.wins, t.scouted ? t.totalPoints / t.scouted : 0, t.totalPoints],
     }))
     .sort((a, b) => b.sort_orders[0] - a.sort_orders[0] || b.sort_orders[1] - a.sort_orders[1] || a.team_key.slice(3) - b.team_key.slice(3))
     .map((entry, i) => ({ rank: anyScored ? i + 1 : null, ...entry })); // no scores yet -> ranks would just be team order
@@ -71,8 +175,8 @@ export function computeRankings(mData) {
     rankings,
     sort_order_info: [
       { name: "Wins", precision: 0 },
-      { name: "Avg Score", precision: 1 },
-      { name: "Total Score", precision: 0 },
+      { name: "Avg Points", precision: 1 }, // the team's own estimated points per scouted match
+      { name: "Total Points", precision: 0 },
     ],
     extra_stats_info: [],
   };
@@ -415,9 +519,7 @@ export async function populateQuestions(questions, categoryID, categoryFormEleme
 
 export async function newEventCache(eventKey, questionsFetcher) {
   const isCustom = isCustomEventKey(eventKey);
-  const eventFetcher = isCustom
-    ? getEvent(eventKey).then(({ matches, ...details }) => [matches || [], details])
-    : Promise.all([TBA_GET(`/event/${eventKey}/matches`), TBA_GET(`/event/${eventKey}`)]);
+  const eventFetcher = isCustom ? getEvent(eventKey).then(({ matches, ...details }) => [matches || [], details]) : Promise.all([TBA_GET(`/event/${eventKey}/matches`), TBA_GET(`/event/${eventKey}`)]);
   let [[mData, eventDetails], questionsData, scoutedData] = await Promise.all([eventFetcher, questionsFetcher ? questionsFetcher() : questionDB("GET"), getDB(`/db?eventKey=${eventKey}`)]);
 
   if (mData && mData.length !== 0) {
@@ -448,7 +550,7 @@ export async function newEventCache(eventKey, questionsFetcher) {
     }
   }
   const cache = { mData, eventDetails, lastUpdated, questionsData, scoutedData: scoutedData.data, scoutedDataPTAvgs, scoutedDataPTAvgsFlat };
-  if (isCustom) cache.rankings = computeRankings(mData);
+  if (isCustom) cache.rankings = computeRankings(mData, scoutedData?.data);
   localStorage.setItem(`eventCache_${eventKey}`, JSON.stringify(cache));
   localStorage.setItem("currentEventKey", eventKey);
   return cache;

@@ -282,7 +282,15 @@ table {
   font-size: 100%;
 }
 
-/* denoting winner/loser */
+.team-pts {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+/* winner/loser */
 
 .match-scores h2.winner {
   font-weight: 900;

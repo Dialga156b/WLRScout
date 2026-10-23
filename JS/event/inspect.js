@@ -3,20 +3,32 @@ import { TBA_GET, newEventCache, isCustomEventKey } from "/JS/utils.js";
 
 const eventTitle = document.getElementById("eventNameHeader");
 
-const users = await getUsers();
 const eventKey = localStorage.getItem("currentEventKey") || null;
+if (!eventKey) {
+  location.href = "/HTML/index.html?msg=Yeahhh%20idk%20either";
+}
+
+// offline shouldn't kill the whole page, just the names
+const users = await getUsers().catch((e) => {
+  console.warn("Couldn't fetch users:", e);
+  return [];
+});
 var eventDetails = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`))?.eventDetails;
 
 function lookupScouter(scoutID) {
   const scouter = Object.values(users).find((u) => String(u.id) === String(scoutID));
-  console.log(scouter);
-  return scouter || "N/A";
+  if (scouter?.name) return scouter.name;
+  return scoutID == null || String(scoutID) === "-1" ? "Unknown" : `ID ${scoutID}`;
 }
 
 // this is the worst spaghetti code ive ever written. made sloppily and in a rush for comp. fix later.
 
 if (eventDetails == null || eventDetails.length == 0) {
-  eventDetails = await newEventCache(eventKey);
+  try {
+    eventDetails = (await newEventCache(eventKey)).eventDetails;
+  } catch (e) {
+    console.warn("Couldn't fetch event details:", e);
+  }
 }
 
 const inspectTypeElement = document.getElementById("eventCodeHeader");
@@ -24,6 +36,9 @@ const inspectTypeElement = document.getElementById("eventCodeHeader");
 const URLParams = new URLSearchParams(window.location.search);
 const inspectType = URLParams.get("type") || "thing";
 const inspectKey = URLParams.get("key") || "?";
+
+inspectTypeElement.textContent = inspectKey;
+eventTitle.textContent = eventDetails ? `${eventDetails.year} ${eventDetails.district?.abbreviation?.toUpperCase() || eventDetails.short_name} ${eventDetails.short_name} Event` : eventKey;
 
 const isAvgMode = inspectType === "team";
 
@@ -69,6 +84,8 @@ async function getTeamData(teamKey, matchID = null) {
   if (!submissions) return {};
 
   matchesScouted = submissions;
+  // everyone who scouted this team, for the averages view
+  const allScouters = [...new Set(submissions.map((s) => lookupScouter(s._scoutID)))].join(", ");
 
   if (matchID !== null) {
     console.log(submissions);
@@ -76,6 +93,7 @@ async function getTeamData(teamKey, matchID = null) {
 
     if (!match) return {};
     const scouter = lookupScouter(match._scoutID);
+    //console.warn(scouter);
     const result = {};
     for (const questionID in match) {
       if (questionID === "_scoutID") continue;
@@ -88,7 +106,7 @@ async function getTeamData(teamKey, matchID = null) {
   }
 
   const cachedAvg = JSON.parse(localStorage.getItem(`eventCache_${localStorage.getItem("currentEventKey")}`))?.scoutedDataPTAvg?.[teamKey];
-  if (cachedAvg) return { data: cachedAvg, scouter: "N/A" };
+  if (cachedAvg) return { data: cachedAvg, scouter: allScouters };
 
   const getVersion = (s) => Object.entries(s).find(([k]) => k !== "_scoutID")?.[1]?.version ?? -1;
   const maxVersion = Math.max(...submissions.map(getVersion));
@@ -152,7 +170,7 @@ async function getTeamData(teamKey, matchID = null) {
     }
   }
   console.warn(result);
-  return { data: result, scouter: "N/A" };
+  return { data: result, scouter: allScouters };
 }
 
 function newStat(type = "pill", parent, label, qData) {
@@ -230,9 +248,9 @@ async function loadHero(key, teamData, scouter = "N/A") {
       return m.winning_alliance === side;
     }).length;
     document.getElementById("hero-winrate").textContent = `${Math.round((wins / played.length) * 100)}%`;
-
-    document.getElementById("hero-scouter").textContent = scouter;
   }
+  // was inside the winrate block, so it never showed for teams without a scored match
+  document.getElementById("hero-scouter").textContent = scouter;
 
   // custom (OCCRA) events have no TBA rankings; newEventCache computes them into the cache instead
   const cachedRankings = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`))?.rankings;
@@ -316,7 +334,7 @@ function clearStats() {
     .forEach((el) => el.remove());
 }
 
-const mData = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`))?.mData ?? [];
+let mData = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`))?.mData ?? [];
 
 function renderMatchButtons(teamNum, submissions) {
   const container = document.getElementById("others-container");
@@ -363,17 +381,35 @@ function renderMatchButtons(teamNum, submissions) {
 if (inspectType == "team") {
   const { data: teamData, scouter } = await getTeamData(inspectKey);
   console.log(teamData);
-  loadHero(inspectKey, teamData, scouter?.name);
+  loadHero(inspectKey, teamData, scouter);
   if (teamData) renderStats(teamData);
   mts.style.display = "none";
   renderMatchButtons(inspectKey, matchesScouted);
 } else {
   mts.style.display = "flex";
-  const match = mData.find((m) => m.key == inspectKey);
-  const matchNumber = match?.match_number?.toString();
+  let match = mData.find((m) => m.key == inspectKey);
+  if (!match) {
+    // cached schedule might be stale (or the key was made up by renderMatchButtons). try a fresh one
+    try {
+      mData = (await newEventCache(eventKey)).mData ?? [];
+      match = mData.find((m) => m.key == inspectKey);
+    } catch (e) {
+      console.warn("Couldn't refresh event cache:", e);
+    }
+  }
+  const matchNumber = match?.match_number?.toString() ?? inspectKey.match(/_qm(\d+)$/)?.[1];
 
-  // works for 2 or 3 teams per alliance; empty slots in custom schedules are skipped
-  const teams = [...match.alliances.blue.team_keys.map((k, i) => ({ teamNum: k.slice(3), label: `Blue ${i + 1}` })), ...match.alliances.red.team_keys.map((k, i) => ({ teamNum: k.slice(3), label: `Red ${i + 1}` }))].filter((t) => t.teamNum);
+  let teams;
+  if (match) {
+    // works for 2 or 3 teams per alliance; empty slots in custom schedules are skipped
+    teams = [...match.alliances.blue.team_keys.map((k, i) => ({ teamNum: k.slice(3), label: `Blue ${i + 1}` })), ...match.alliances.red.team_keys.map((k, i) => ({ teamNum: k.slice(3), label: `Red ${i + 1}` }))].filter((t) => t.teamNum);
+  } else {
+    // no schedule entry, so fall back to whichever teams were scouted in this match
+    const organizedTeams = await getOrganizedScoutedData();
+    teams = Object.keys(organizedTeams)
+      .filter((team) => organizedTeams[team].some((s) => s.match?.value == matchNumber))
+      .map((team) => ({ teamNum: team, label: `Team ${team}` }));
+  }
 
   let currentIndex = 0;
 
@@ -383,12 +419,13 @@ if (inspectType == "team") {
     document.getElementById("hero-rank").textContent = "—";
     document.getElementById("hero-winrate").textContent = "—";
     document.getElementById("hero-startpos").textContent = "—";
+    document.getElementById("hero-scouter").textContent = "—";
     document.getElementById("team-name").textContent = "Team";
     clearStats();
     renderMatchButtons(teamNum, null); // clear while loading
 
     const { data: teamData, scouter } = await getTeamData(teamNum, matchNumber);
-    loadHero(teamNum, teamData, scouter?.name);
+    loadHero(teamNum, teamData, scouter);
     if (teamData) renderStats(teamData);
     renderMatchButtons(teamNum, matchesScouted);
   }
@@ -410,16 +447,14 @@ if (inspectType == "team") {
         teams.findIndex((t) => t.teamNum === teamParam)
       )
     : 0;
-  await loadTeam(startIndex);
-}
-
-if (!eventKey) {
-  location.href = "/HTML/index.html?msg=Yeahhh%20idk%20either";
+  if (teams.length > 0) {
+    await loadTeam(startIndex);
+  } else {
+    mts.style.display = "none";
+    document.getElementById("team-name").textContent = "No data for this match";
+  }
 }
 
 window.back = function () {
   location.href = `/HTML/event-frc.html?eventKey=${eventKey}`;
 };
-
-inspectTypeElement.textContent = inspectKey;
-eventTitle.textContent = `${eventDetails.year} ${eventDetails.district?.abbreviation?.toUpperCase() || eventDetails.short_name} ${eventDetails.short_name} Event`;

@@ -84,7 +84,9 @@ export async function questionDB(method, data, fetchOptions = {}) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15000),
     });
+    if (!res.ok) throw new Error(`Failed to save questions (${res.status})`);
     const result = await res.json();
     return result;
   }
