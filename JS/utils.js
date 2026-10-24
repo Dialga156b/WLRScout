@@ -34,7 +34,7 @@ async function getCustomEvents() {
 // OCCRA scoring changes every season SO THIS IS HARDCODED FOR NOW!!!! UPDATE THIS EACH YEAR (and if question ids change).
 // question ids have points. counters are points per ball, toggles are points if true. anything not listed is worth 0
 const OCCRA_POINT_VALUES = {
-  //moved: 2,
+  moved: 1,
   auton_high: 3,
   auton_low: 2,
   teleop_high: 2,
