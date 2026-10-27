@@ -39,6 +39,7 @@ const OCCRA_POINT_VALUES = {
   auton_low: 2,
   teleop_high: 2,
   teleop_low: 1,
+  won: 10,
 };
 const OCCRA_WON_QUESTION = "won"; // "Alliance Won?" toggle
 const OCCRA_NOSHOW_QUESTION = "noshow";
