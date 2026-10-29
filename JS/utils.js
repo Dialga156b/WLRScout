@@ -32,17 +32,36 @@ async function getCustomEvents() {
 }
 
 // OCCRA scoring changes every season SO THIS IS HARDCODED FOR NOW!!!! UPDATE THIS EACH YEAR (and if question ids change).
-// question ids have points. counters are points per ball, toggles are points if true. anything not listed is worth 0
+// question ids have points PER ROBOT. counters are points per ball, toggles are points if true. anything not listed is worth 0
 const OCCRA_POINT_VALUES = {
   moved: 1,
   auton_high: 3,
   auton_low: 2,
   teleop_high: 2,
   teleop_low: 1,
-  won: 10,
 };
+// added ONCE to the winning alliance's score (not per robot), so it isn't part of any one team's own points
+const OCCRA_WIN_POINTS = 10;
 const OCCRA_WON_QUESTION = "won"; // "Alliance Won?" toggle
 const OCCRA_NOSHOW_QUESTION = "noshow";
+
+// get() gets a team's tallies
+//   played = matches with a result, scouted = matches this team was scouted in
+// careful: the leaderboard's AFC/AAFC columns read columns [1] and [2] as avg match scores
+const OCCRA_RANKING_COLUMNS = [
+  { id: "alliancePoints", name: "Alliance Points", precision: 0, get: (t) => t.alliancePoints },
+  { id: "wins", name: "Wins", precision: 0, get: (t) => t.wins },
+  { id: "winpercentage", name: "Win Percentage", precision: 1, get: (t) => (t.played ? (t.wins / t.played) * 100 : 0) },
+  { id: "avgPoints", name: "Avg Points", precision: 1, get: (t) => (t.scouted ? t.totalPoints / t.scouted : 0) },
+  { id: "totalPoints", name: "Total Points", precision: 0, get: (t) => t.totalPoints },
+];
+// how teams are ranked. first one decides, the rest break ties (team number is the final tiebreak).
+// column = an id from OCCRA_RANKING_COLUMNS, higherIsBetter = false for stats where lower ranks higher
+const OCCRA_RANK_ORDER = [
+  { column: "alliancePoints", higherIsBetter: true },
+  { column: "totalPoints", higherIsBetter: true },
+  { column: "avgPoints", higherIsBetter: true },
+];
 
 const isYes = (v) => v === true || v === "true";
 const isNo = (v) => v === false || v === "false";
@@ -80,7 +99,8 @@ function collectScoutedMatches(scoutedRows) {
 
 // { blue, red, winner, teamPoints, estimated } for a match, or null if it hasn't been played (no scores and nobody scouted it).
 // real scores win if they exist. otherwise the scouts' "Alliance Won?" answers vote, and estimated points break ties.
-// teamPoints is { "frc308": 12, ... } for each scouted team
+// estimated scores = the alliance's robot points + OCCRA_WIN_POINTS for the winner.
+// teamPoints is { "frc308": 12, ... } for each scouted team, robot points only (no win bonus)
 function getMatchResult(match, scoutedMatches) {
   const { blue, red } = match.alliances;
   const hasScores = blue.score >= 0 && red.score >= 0;
@@ -111,6 +131,7 @@ function getMatchResult(match, scoutedMatches) {
 
   let winner = votes > 0 ? "blue" : votes < 0 ? "red" : null;
   if (!winner && score.blue !== score.red) winner = score.blue > score.red ? "blue" : "red";
+  if (winner) score[winner] += OCCRA_WIN_POINTS;
   return { ...score, winner, teamPoints, estimated: true };
 }
 
@@ -128,8 +149,7 @@ export function getEstimatedMatchResults(mData, scoutedRows) {
 
 // TBA-shaped rankings built from played matches, since TBA has nothing for custom events.
 // every scheduled team gets an entry (even with 0 played) so the leaderboard lists them before results exist.
-// ranked by wins, then avg points. points are only the team's OWN scouted points (OCCRA_POINT_VALUES), not the
-// alliance score, so a team doesn't look better just because its partners were good
+// columns and rank order come from OCCRA_RANKING_COLUMNS / OCCRA_RANK_ORDER
 export function computeRankings(mData, scoutedRows = []) {
   const scoutedMatches = collectScoutedMatches(scoutedRows);
   const teams = {};
@@ -143,11 +163,14 @@ export function computeRankings(mData, scoutedRows = []) {
       ["blue", blue],
       ["red", red],
     ]) {
+      // every scouted robot on this alliance (own + partners'), plus the win bonus once if the alliance won
+      const allianceTotal = result ? alliance.team_keys.reduce((sum, key) => sum + (result.teamPoints[key] ?? 0), 0) + (result.winner === side ? OCCRA_WIN_POINTS : 0) : 0;
       for (const teamKey of alliance.team_keys) {
         if (!teamKey) continue;
-        const t = (teams[teamKey] ??= { wins: 0, losses: 0, ties: 0, played: 0, totalPoints: 0, scouted: 0 });
+        const t = (teams[teamKey] ??= { wins: 0, losses: 0, ties: 0, played: 0, totalPoints: 0, alliancePoints: 0, scouted: 0 });
         if (!result) continue;
         t.played++;
+        t.alliancePoints += allianceTotal;
         // a match where this team wasn't scouted still counts for wins, just not for the points average
         if (result.teamPoints[teamKey] !== undefined) {
           t.scouted++;
@@ -160,25 +183,31 @@ export function computeRankings(mData, scoutedRows = []) {
     }
   }
 
+  const rankBy = OCCRA_RANK_ORDER.map(({ column, higherIsBetter }) => ({
+    index: OCCRA_RANKING_COLUMNS.findIndex((col) => col.id === column),
+    dir: higherIsBetter ? -1 : 1,
+  })).filter(({ index }) => index !== -1);
+
   const anyScored = Object.values(teams).some((t) => t.played > 0);
   const rankings = Object.entries(teams)
     .map(([team_key, t]) => ({
       team_key,
       matches_played: t.played,
       record: { wins: t.wins, losses: t.losses, ties: t.ties },
-      // [1] is read as the avg match score by the leaderboard's AFC column
-      sort_orders: [t.wins, t.scouted ? t.totalPoints / t.scouted : 0, t.totalPoints],
+      sort_orders: OCCRA_RANKING_COLUMNS.map((col) => col.get(t)),
     }))
-    .sort((a, b) => b.sort_orders[0] - a.sort_orders[0] || b.sort_orders[1] - a.sort_orders[1] || a.team_key.slice(3) - b.team_key.slice(3))
+    .sort((a, b) => {
+      for (const { index, dir } of rankBy) {
+        const diff = (a.sort_orders[index] - b.sort_orders[index]) * dir;
+        if (diff) return diff;
+      }
+      return a.team_key.slice(3) - b.team_key.slice(3);
+    })
     .map((entry, i) => ({ rank: anyScored ? i + 1 : null, ...entry })); // no scores yet -> ranks would just be team order
 
   return {
     rankings,
-    sort_order_info: [
-      { name: "Wins", precision: 0 },
-      { name: "Avg Points", precision: 1 }, // the team's own estimated points per scouted match
-      { name: "Total Points", precision: 0 },
-    ],
+    sort_order_info: OCCRA_RANKING_COLUMNS.map(({ name, precision }) => ({ name, precision })),
     extra_stats_info: [],
   };
 }

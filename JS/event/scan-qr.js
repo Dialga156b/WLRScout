@@ -288,20 +288,6 @@ async function uploadThings() {
 }
 
 uploadBtn.addEventListener("click", uploadThings);
-/* 
-  test code to see if populating the table works. dont use in a loop
-  setInterval(() => {
-    handleQRCode(
-      JSON.stringify({
-        prematch: ["Center", "800", "Im from israel"],
-        autonomous: [true, true, "Took from Human Player", true],
-        teleop: ["1.44", "25", "Ball Passing", "Fixed Direction", "Over Ramp", "1"],
-        endgame: ["Level 3"],
-        postmatch: ["8", "70", true, "hello"],
-      })
-    );
-  }, 1000); 
-*/
 
 scanBtn.addEventListener("click", () => setPopup(true));
 closeBtn.addEventListener("click", () => setPopup(false));

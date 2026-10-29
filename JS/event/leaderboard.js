@@ -5,6 +5,8 @@ const urlParams = new URLSearchParams(window.location.search);
 const eventKey = urlParams.get("eventKey");
 
 const useOnlineLeaderboardLayout = true;
+const STALE_DATA_MINUTES = 30; // warn to refetch if cached data is older than this
+const TEAM_AVATAR_YEAR = 2026; // TBA avatars are per season
 
 export const LEADERBOARD_COLUMNS_OFFLINE = [
   { id: "total-rp", label: "Total RP" },
@@ -34,8 +36,8 @@ async function initLeaderboard() {
   }
 
   const seconds = Math.floor(Math.abs(lastUpdated - now) / 1000);
-  if (seconds > 60 * 30) {
-    confirm("A failsafe detected this data may be stale (30+ minutes old). It is recommended to refetch data.");
+  if (seconds > 60 * STALE_DATA_MINUTES) {
+    confirm(`A failsafe detected this data may be stale (${STALE_DATA_MINUTES}+ minutes old). It is recommended to refetch data.`);
   }
   console.log(`Last fetched data ${seconds}s ago`);
 }
@@ -199,7 +201,7 @@ export async function loadLeaderboard() {
   function createTeam(teamNumber, stats, columns) {
     const el = template.cloneNode(true);
     el.querySelector(".team-id").textContent = teamNumber;
-    el.querySelector(".team-logo").src = `https://www.thebluealliance.com/avatar/2026/frc${teamNumber}.png`;
+    el.querySelector(".team-logo").src = `https://www.thebluealliance.com/avatar/${TEAM_AVATAR_YEAR}/frc${teamNumber}.png`;
     el.querySelector(".team-rank").textContent = stats.rank ?? "N/A";
 
     const statElTemplate = el.querySelector(".team-stat");
