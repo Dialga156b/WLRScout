@@ -73,8 +73,22 @@ setupBtn.addEventListener("click", () => {
   location.href = `/HTML/scout.html?eventKey=${validEvent.key}&setupComplete=true`;
 });
 
-function toggleDebug() {
-  location.href = location.pathname + "?dbID=2026misal";
+async function toggleDebug() {
+  const now = new Date();
+  const year = now.getFullYear();
+
+  for (const y of [year, year - 1]) {
+    const eventsRaw = Object.entries(localStorage);
+    const events = eventsRaw.filter(([key]) => key.startsWith("eventCache_")).map(([key, value]) => JSON.parse(value));
+    events.sort((a, b) => new Date(b.eventDetails.end_date) - new Date(a.eventDetails.end_date));
+    console.log(events[0]);
+    if (events.length) {
+      location.href = location.pathname + `?dbID=${events[0].eventDetails.key}`;
+      return;
+    }
+  }
+
+  alert("Couldn't find a past event to debug with!!!!! This button only works if you've viewed another event on the app before");
 }
 
 reload();

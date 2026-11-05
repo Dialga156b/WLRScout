@@ -31,7 +31,7 @@ async function getCustomEvents() {
   }
 }
 
-// OCCRA scoring changes every season SO THIS IS HARDCODED FOR NOW!!!! UPDATE THIS EACH YEAR (and if question ids change).
+// OCCRA scoring changes every season SO THIS IS HARDCODED FOR NOW!!!! UPDATE THIS!!!
 // question ids have points PER ROBOT. counters are points per ball, toggles are points if true. anything not listed is worth 0
 const OCCRA_POINT_VALUES = {
   moved: 1,
@@ -42,12 +42,11 @@ const OCCRA_POINT_VALUES = {
 };
 // added ONCE to the winning alliance's score (not per robot), so it isn't part of any one team's own points
 const OCCRA_WIN_POINTS = 10;
-const OCCRA_WON_QUESTION = "won"; // "Alliance Won?" toggle
+const OCCRA_WON_QUESTION = "won";
 const OCCRA_NOSHOW_QUESTION = "noshow";
 
 // get() gets a team's tallies
 //   played = matches with a result, scouted = matches this team was scouted in
-// careful: the leaderboard's AFC/AAFC columns read columns [1] and [2] as avg match scores
 const OCCRA_RANKING_COLUMNS = [
   { id: "alliancePoints", name: "Alliance Points", precision: 0, get: (t) => t.alliancePoints },
   { id: "wins", name: "Wins", precision: 0, get: (t) => t.wins },
@@ -55,8 +54,7 @@ const OCCRA_RANKING_COLUMNS = [
   { id: "avgPoints", name: "Avg Points", precision: 1, get: (t) => (t.scouted ? t.totalPoints / t.scouted : 0) },
   { id: "totalPoints", name: "Total Points", precision: 0, get: (t) => t.totalPoints },
 ];
-// how teams are ranked. first one decides, the rest break ties (team number is the final tiebreak).
-// column = an id from OCCRA_RANKING_COLUMNS, higherIsBetter = false for stats where lower ranks higher
+// ids from thing above
 const OCCRA_RANK_ORDER = [
   { column: "alliancePoints", higherIsBetter: true },
   { column: "totalPoints", higherIsBetter: true },
