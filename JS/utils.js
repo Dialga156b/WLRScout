@@ -68,6 +68,8 @@ function reportedAllianceScore(submissionLists) {
 //   played = matches with a result, scouted = matches this team was scouted in
 const OCCRA_RANKING_COLUMNS = [
   { id: "alliancePoints", name: "Alliance Points", precision: 0, get: (t) => t.alliancePoints },
+  // only shown when the event has starting points: alliance points earned at this event alone
+  { id: "tournamentPoints", name: "Tournament Points", precision: 0, get: (t) => t.alliancePoints - t.startingPoints, needsStartingPoints: true },
   { id: "played", name: "Matches Played", precision: 0, get: (t) => t.played },
   { id: "winpercentage", name: "Win Percentage", precision: 1, get: (t) => (t.played ? (t.wins / t.played) * 100 : 0) },
   { id: "avgPoints", name: "Avg Points", precision: 1, get: (t) => (t.scouted ? t.totalPoints / t.scouted : 0) },
@@ -185,7 +187,7 @@ export function computeRankings(mData, scoutedRows = [], startingPoints = {}) {
   const teams = {};
   for (const [teamKey, points] of Object.entries(startingPoints || {})) {
     if (!Number.isFinite(Number(points))) continue;
-    teams[teamKey] = { wins: 0, losses: 0, ties: 0, played: 0, totalPoints: 0, alliancePoints: Number(points), scouted: 0 };
+    teams[teamKey] = { wins: 0, losses: 0, ties: 0, played: 0, totalPoints: 0, alliancePoints: Number(points), startingPoints: Number(points), scouted: 0 };
   }
   for (const match of Array.isArray(mData) ? mData : []) {
     const blue = match.alliances?.blue;
@@ -204,7 +206,7 @@ export function computeRankings(mData, scoutedRows = [], startingPoints = {}) {
       else if (result) allianceTotal = alliance.team_keys.reduce((sum, key) => sum + (result.teamPoints[key] ?? 0), 0) + (result.winner === side ? OCCRA_WIN_POINTS : 0);
       for (const teamKey of alliance.team_keys) {
         if (!teamKey) continue;
-        const t = (teams[teamKey] ??= { wins: 0, losses: 0, ties: 0, played: 0, totalPoints: 0, alliancePoints: 0, scouted: 0 });
+        const t = (teams[teamKey] ??= { wins: 0, losses: 0, ties: 0, played: 0, totalPoints: 0, alliancePoints: 0, startingPoints: 0, scouted: 0 });
         if (!result) continue;
         t.played++;
         t.alliancePoints += allianceTotal;
@@ -220,8 +222,10 @@ export function computeRankings(mData, scoutedRows = [], startingPoints = {}) {
     }
   }
 
+  const hasStartingPoints = Object.values(teams).some((t) => t.startingPoints);
+  const columns = OCCRA_RANKING_COLUMNS.filter((col) => !col.needsStartingPoints || hasStartingPoints);
   const rankBy = OCCRA_RANK_ORDER.map(({ column, higherIsBetter }) => ({
-    index: OCCRA_RANKING_COLUMNS.findIndex((col) => col.id === column),
+    index: columns.findIndex((col) => col.id === column),
     dir: higherIsBetter ? -1 : 1,
   })).filter(({ index }) => index !== -1);
 
@@ -231,7 +235,7 @@ export function computeRankings(mData, scoutedRows = [], startingPoints = {}) {
       team_key,
       matches_played: t.played,
       record: { wins: t.wins, losses: t.losses, ties: t.ties },
-      sort_orders: OCCRA_RANKING_COLUMNS.map((col) => col.get(t)),
+      sort_orders: columns.map((col) => col.get(t)),
     }))
     .sort((a, b) => {
       for (const { index, dir } of rankBy) {
@@ -244,7 +248,7 @@ export function computeRankings(mData, scoutedRows = [], startingPoints = {}) {
 
   return {
     rankings,
-    sort_order_info: OCCRA_RANKING_COLUMNS.map(({ name, precision }) => ({ name, precision })),
+    sort_order_info: columns.map(({ name, precision }) => ({ name, precision })),
     extra_stats_info: [],
   };
 }
