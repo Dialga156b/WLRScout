@@ -39,17 +39,36 @@ const OCCRA_POINT_VALUES = {
   auton_low: 2,
   teleop_high: 2,
   teleop_low: 1,
+  bonus_high: 3,
+  bonus_low: 2,
 };
 // added ONCE to the winning alliance's score (not per robot), so it isn't part of any one team's own points
 const OCCRA_WIN_POINTS = 10;
 const OCCRA_WON_QUESTION = "won";
 const OCCRA_NOSHOW_QUESTION = "noshow";
+// optional: the judges' official alliance score, typed in by the scout. beats the estimate when present
+const OCCRA_ALLIANCE_SCORE_QUESTION = "alliance_score";
+
+// most common official score the scouts on one alliance reported, or null if nobody did
+function reportedAllianceScore(submissionLists) {
+  const counts = new Map();
+  for (const answers of submissionLists.flat()) {
+    const raw = answers[OCCRA_ALLIANCE_SCORE_QUESTION];
+    if (raw === undefined || raw === null || raw === "" || raw === "_IGNORE" || typeof raw === "boolean") continue;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) continue;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  let best = null;
+  for (const [value, count] of counts) if (best === null || count > counts.get(best)) best = value;
+  return best;
+}
 
 // get() gets a team's tallies
 //   played = matches with a result, scouted = matches this team was scouted in
 const OCCRA_RANKING_COLUMNS = [
   { id: "alliancePoints", name: "Alliance Points", precision: 0, get: (t) => t.alliancePoints },
-  { id: "wins", name: "Wins", precision: 0, get: (t) => t.wins },
+  { id: "played", name: "Matches Played", precision: 0, get: (t) => t.played },
   { id: "winpercentage", name: "Win Percentage", precision: 1, get: (t) => (t.played ? (t.wins / t.played) * 100 : 0) },
   { id: "avgPoints", name: "Avg Points", precision: 1, get: (t) => (t.scouted ? t.totalPoints / t.scouted : 0) },
   { id: "totalPoints", name: "Total Points", precision: 0, get: (t) => t.totalPoints },
@@ -97,7 +116,8 @@ function collectScoutedMatches(scoutedRows) {
 
 // { blue, red, winner, teamPoints, estimated } for a match, or null if it hasn't been played (no scores and nobody scouted it).
 // real scores win if they exist. otherwise the scouts' "Alliance Won?" answers vote, and estimated points break ties.
-// estimated scores = the alliance's robot points + OCCRA_WIN_POINTS for the winner.
+// estimated scores = the alliance's robot points + OCCRA_WIN_POINTS for the winner, unless a scout reported
+// the official alliance_score for that alliance (then that's used as-is, and decides the winner if both sides have one).
 // teamPoints is { "frc308": 12, ... } for each scouted team, robot points only (no win bonus)
 function getMatchResult(match, scoutedMatches) {
   const { blue, red } = match.alliances;
@@ -107,11 +127,13 @@ function getMatchResult(match, scoutedMatches) {
 
   const score = { blue: 0, red: 0 };
   const teamPoints = {}; // filled even when real scores exist, so the leaderboard can use each team's own points
+  const official = { blue: null, red: null };
   let votes = 0; // positive = blue won
   for (const [side, alliance] of [
     ["blue", blue],
     ["red", red],
   ]) {
+    official[side] = reportedAllianceScore(alliance.team_keys.map((teamKey) => submissions?.get(teamKey?.slice(3)) || []));
     for (const teamKey of alliance.team_keys) {
       const teamSubs = submissions?.get(teamKey?.slice(3));
       if (!teamSubs) continue;
@@ -127,20 +149,29 @@ function getMatchResult(match, scoutedMatches) {
 
   if (hasScores) return { blue: blue.score, red: red.score, winner: match.winning_alliance || null, teamPoints, estimated: false };
 
-  let winner = votes > 0 ? "blue" : votes < 0 ? "red" : null;
-  if (!winner && score.blue !== score.red) winner = score.blue > score.red ? "blue" : "red";
-  if (winner) score[winner] += OCCRA_WIN_POINTS;
-  return { ...score, winner, teamPoints, estimated: true };
+  const bothOfficial = official.blue !== null && official.red !== null;
+  let winner = null;
+  if (bothOfficial) winner = official.blue > official.red ? "blue" : official.red > official.blue ? "red" : null;
+  else {
+    winner = votes > 0 ? "blue" : votes < 0 ? "red" : null;
+    if (!winner && score.blue !== score.red) winner = score.blue > score.red ? "blue" : "red";
+    if (winner) score[winner] += OCCRA_WIN_POINTS;
+  }
+  // official scores already include the win bonus
+  for (const side of ["blue", "red"]) if (official[side] !== null) score[side] = official[side];
+  return { ...score, winner, teamPoints, estimated: !bothOfficial, official: { blue: official.blue !== null, red: official.red !== null } };
 }
 
-// match key -> getMatchResult, for matches whose result is estimated from scouting (OCCRA). used by the match list
+// match key -> getMatchResult, for matches whose result comes from scouting (OCCRA), estimated or scout-reported
+// official alliance_score. used by the match list
 export function getEstimatedMatchResults(mData, scoutedRows) {
   const scoutedMatches = collectScoutedMatches(scoutedRows);
   const results = new Map();
   for (const match of Array.isArray(mData) ? mData : []) {
     if (!match.alliances?.blue || !match.alliances?.red) continue;
+    if (match.alliances.blue.score >= 0 && match.alliances.red.score >= 0) continue; // real schedule scores
     const result = getMatchResult(match, scoutedMatches);
-    if (result?.estimated) results.set(match.key, result);
+    if (result) results.set(match.key, result);
   }
   return results;
 }
@@ -148,9 +179,14 @@ export function getEstimatedMatchResults(mData, scoutedRows) {
 // TBA-shaped rankings built from played matches, since TBA has nothing for custom events.
 // every scheduled team gets an entry (even with 0 played) so the leaderboard lists them before results exist.
 // columns and rank order come from OCCRA_RANKING_COLUMNS / OCCRA_RANK_ORDER
-export function computeRankings(mData, scoutedRows = []) {
+// startingPoints is the event's optional { "frc308": 12, ... }, added to each team's alliance points
+export function computeRankings(mData, scoutedRows = [], startingPoints = {}) {
   const scoutedMatches = collectScoutedMatches(scoutedRows);
   const teams = {};
+  for (const [teamKey, points] of Object.entries(startingPoints || {})) {
+    if (!Number.isFinite(Number(points))) continue;
+    teams[teamKey] = { wins: 0, losses: 0, ties: 0, played: 0, totalPoints: 0, alliancePoints: Number(points), scouted: 0 };
+  }
   for (const match of Array.isArray(mData) ? mData : []) {
     const blue = match.alliances?.blue;
     const red = match.alliances?.red;
@@ -161,8 +197,11 @@ export function computeRankings(mData, scoutedRows = []) {
       ["blue", blue],
       ["red", red],
     ]) {
+      // the scout-reported official alliance_score if there is one (already includes the win bonus), otherwise
       // every scouted robot on this alliance (own + partners'), plus the win bonus once if the alliance won
-      const allianceTotal = result ? alliance.team_keys.reduce((sum, key) => sum + (result.teamPoints[key] ?? 0), 0) + (result.winner === side ? OCCRA_WIN_POINTS : 0) : 0;
+      let allianceTotal = 0;
+      if (result?.official?.[side]) allianceTotal = result[side];
+      else if (result) allianceTotal = alliance.team_keys.reduce((sum, key) => sum + (result.teamPoints[key] ?? 0), 0) + (result.winner === side ? OCCRA_WIN_POINTS : 0);
       for (const teamKey of alliance.team_keys) {
         if (!teamKey) continue;
         const t = (teams[teamKey] ??= { wins: 0, losses: 0, ties: 0, played: 0, totalPoints: 0, alliancePoints: 0, scouted: 0 });
@@ -578,7 +617,7 @@ export async function newEventCache(eventKey, questionsFetcher) {
     }
   }
   const cache = { mData, eventDetails, lastUpdated, questionsData, scoutedData: scoutedData.data, scoutedDataPTAvgs, scoutedDataPTAvgsFlat };
-  if (isCustom) cache.rankings = computeRankings(mData, scoutedData?.data);
+  if (isCustom) cache.rankings = computeRankings(mData, scoutedData?.data, eventDetails?.starting_points);
   localStorage.setItem(`eventCache_${eventKey}`, JSON.stringify(cache));
   localStorage.setItem("currentEventKey", eventKey);
   return cache;

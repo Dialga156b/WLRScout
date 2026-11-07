@@ -14,6 +14,7 @@ const formStart = document.getElementById("event-start-date");
 const formEnd = document.getElementById("event-end-date");
 const formLocation = document.getElementById("event-location");
 const formAllianceSizeBtn = document.getElementById("event-alliance-size-btn");
+const formStartingPoints = document.getElementById("event-starting-points");
 
 const readoutName = document.getElementById("ro-name");
 const readoutKey = document.getElementById("ro-key");
@@ -24,6 +25,9 @@ const createBtn = document.getElementById("create-btn");
 
 const scheduleEditor = document.getElementById("schedule-editor");
 const scheduleSubheader = document.getElementById("schedule-subheader");
+const copyPromptBtn = document.getElementById("copy-prompt-btn");
+const pasteJSONBtn = document.getElementById("paste-json-btn");
+const markSurrogateBtn = document.getElementById("mark-surrogate-btn");
 const addMatchBtn = document.getElementById("add-match-btn");
 const deleteLastBtn = document.getElementById("delete-last-btn");
 const scheduleBackBtn = document.getElementById("schedule-back-btn");
@@ -131,11 +135,28 @@ async function loadFirstEvents() {
 // ---------- new event form ----------
 
 function uniqueEventKey(year, shortName) {
-  const slug = shortName.toLowerCase().replace(/[^a-z]/g, "").slice(0, 3) || "evt";
+  const slug =
+    shortName
+      .toLowerCase()
+      .replace(/[^a-z]/g, "")
+      .slice(0, 3) || "evt";
   const base = `${year}wlros-${slug}`;
   let key = base;
   for (let n = 2; customEvents.some((ev) => ev.key === key); n++) key = `${base}${n}`;
   return key;
+}
+
+// one team per line (or ";" separated): first number is the team, second is the points.
+// anything between them works ("308 19", "308: 19", "frc308, 19") -> { points: { frc308: 19, ... }, bad: [unreadable entries] }
+function parseStartingPoints(text) {
+  const points = {};
+  const bad = [];
+  for (const entry of text.split(/[\n;]+/).map((s) => s.trim()).filter(Boolean)) {
+    const found = entry.match(/^(?:frc)?(\d+)[^\d-]+(-?\d+(?:\.\d+)?)$/i);
+    if (found) points[`frc${Number(found[1])}`] = Number(found[2]);
+    else bad.push(entry);
+  }
+  return { points, bad };
 }
 
 // returns the event's length in days (inclusive), 0 if the dates are missing/backwards
@@ -160,6 +181,7 @@ function readForm() {
     event_type_string: "Offseason",
     district: { abbreviation: "occra", display_name: "OCCRA" },
     teams_per_alliance: formTeamsPerAlliance,
+    starting_points: parseStartingPoints(formStartingPoints.value).points,
     matches: [],
   };
 
@@ -176,7 +198,7 @@ function readForm() {
 }
 
 function resetForm() {
-  [formName, formStart, formEnd, formLocation].forEach((input) => (input.value = ""));
+  [formName, formStart, formEnd, formLocation, formStartingPoints].forEach((input) => (input.value = ""));
   formTeamsPerAlliance = 3;
   setAllianceSizeLabel(formAllianceSizeBtn, formTeamsPerAlliance);
   readForm();
@@ -204,6 +226,11 @@ createBtn.addEventListener("click", async () => {
   }
   if (!durationDays) {
     alert("Event not created. The end date must be on or after the start date.");
+    return;
+  }
+  const { bad } = parseStartingPoints(formStartingPoints.value);
+  if (bad.length) {
+    alert(`Event not created. Couldn't read these starting points (use "team: points"):\n- ${bad.join("\n- ")}`);
     return;
   }
 
@@ -390,8 +417,12 @@ function normalizeMatches() {
   const size = teamsPerAlliance(activeEvent);
   matches.forEach((match, index) => {
     for (const alliance of ["blue", "red"]) {
-      const keys = match.alliances[alliance].team_keys;
-      match.alliances[alliance].team_keys = Array.from({ length: size }, (_, i) => keys[i] || "");
+      const side = match.alliances[alliance];
+      const keys = side.team_keys || [];
+      side.score ??= -1;
+      side.team_keys = Array.from({ length: size }, (_, i) => keys[i] || "");
+      // surrogates must still be on this alliance after resizing/edits
+      side.surrogate_team_keys = (side.surrogate_team_keys || []).filter((key) => key && side.team_keys.includes(key));
     }
     match.match_number = index + 1;
     match.comp_level ??= "qm";
@@ -472,12 +503,26 @@ function renderRows() {
     row.querySelector(".r-round-num").textContent = match.match_number;
 
     activeCells().forEach(([selector, alliance, slot]) => {
-      const input = row.querySelector(`${selector} input`);
-      input.value = teamNumberFromKey(match.alliances[alliance].team_keys[slot]);
+      const cell = row.querySelector(selector);
+      const input = cell.querySelector("input");
+      const side = match.alliances[alliance];
+      input.value = teamNumberFromKey(side.team_keys[slot]);
+      cell.classList.toggle("surrogate", side.surrogate_team_keys.includes(side.team_keys[slot]));
       input.addEventListener("input", () => {
         input.value = input.value.replace(/\D/g, ""); // team numbers only
         input.classList.remove("invalid");
-        match.alliances[alliance].team_keys[slot] = teamKeyFromNumber(input.value);
+        // a different team in this slot isn't the surrogate anymore
+        side.surrogate_team_keys = side.surrogate_team_keys.filter((key) => key !== side.team_keys[slot]);
+        cell.classList.remove("surrogate");
+        side.team_keys[slot] = teamKeyFromNumber(input.value);
+        saveDraft();
+      });
+      cell.addEventListener("click", () => {
+        const key = side.team_keys[slot];
+        if (!markingSurrogates || !key) return;
+        const isSurrogate = side.surrogate_team_keys.includes(key);
+        side.surrogate_team_keys = isSurrogate ? side.surrogate_team_keys.filter((k) => k !== key) : [...side.surrogate_team_keys, key];
+        cell.classList.toggle("surrogate", !isSurrogate);
         saveDraft();
       });
       input.addEventListener("keydown", (e) => {
@@ -549,7 +594,17 @@ deleteLastBtn.addEventListener("click", () => {
   renderRows();
 });
 
+let markingSurrogates = false;
+function setMarkingSurrogates(on) {
+  markingSurrogates = on;
+  scheduleTable.classList.toggle("marking-surrogates", on);
+  markSurrogateBtn.querySelector(".mark-surrogate-label").textContent = on ? "Stop Marking" : "Mark Surrogate";
+}
+
+markSurrogateBtn.addEventListener("click", () => setMarkingSurrogates(!markingSurrogates));
+
 scheduleBackBtn.addEventListener("click", () => {
+  setMarkingSurrogates(false);
   activeEvent = null;
   showView("list");
 });
@@ -593,6 +648,70 @@ deleteEventBtn.addEventListener("click", async () => {
   } finally {
     deleteEventBtn.disabled = false;
   }
+});
+
+const SCHEDULE_PROMPT = `based on the attatched image, provide a JSON object for this event's match schedule. data should be formatted like so:
+  [...{
+    "match": "3",
+    "blueKeys": ["frc308","frc7553"],
+    "redKeys": ["frc7178","frc503"]
+  }...] if there is three teams per alliance, 
+  provide three keys per alliance color. 
+  matches should be in order, and have each team in the 
+  correct order (red 1 not swapped with red 2, etc.)
+  for teams that are marked as surrogates, add an additional
+  "surrogateKeys": ["frc67"] in said match entry containing surrogate keys. ignore hand-drawn notes, 
+  except if they seem to replace or fix team numbers or the schedule itself.`;
+
+copyPromptBtn.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(SCHEDULE_PROMPT);
+    alert("Prompt copied. Paste it into your AI with a photo of the schedule.");
+  } catch (err) {
+    console.error("Failed to copy prompt:", err);
+    window.prompt("Couldn't copy automatically, copy this instead:", SCHEDULE_PROMPT);
+  }
+});
+
+const toTeamKey = (key) => teamKeyFromNumber(String(key ?? "").replace(/^frc/i, ""));
+
+pasteJSONBtn.addEventListener("click", () => {
+  const pasted = window.prompt("paste here...");
+  if (!pasted) return;
+
+  let resJSON;
+  try {
+    //  AI BS formatting crap we get rid of
+    resJSON = JSON.parse(pasted.replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, ""));
+    if (!Array.isArray(resJSON)) throw new Error("expected an array of matches");
+  } catch (err) {
+    alert(`Malformed JSON, try again: ${err.message}`);
+    return;
+  }
+  if (matches.some((m) => [...m.alliances.blue.team_keys, ...m.alliances.red.team_keys].some(Boolean)) && !confirm(`Replace the current schedule with ${resJSON.length} pasted matches?`)) return;
+
+  resJSON.sort((a, b) => Number(a.match) - Number(b.match));
+  const matchFrameUnnormalized = resJSON.map((entry) => {
+    const blueKeys = (entry.blueKeys || []).map(toTeamKey);
+    const redKeys = (entry.redKeys || []).map(toTeamKey);
+    const surrogateKeys = (entry.surrogateKeys || []).map(toTeamKey);
+    return {
+      alliances: {
+        blue: { score: -1, team_keys: blueKeys, surrogate_team_keys: surrogateKeys.filter((key) => blueKeys.includes(key)) },
+        red: { score: -1, team_keys: redKeys, surrogate_team_keys: surrogateKeys.filter((key) => redKeys.includes(key)) },
+      },
+      comp_level: "qm",
+      set_number: 1,
+      winning_alliance: null,
+    };
+  });
+
+  const largest = Math.max(0, ...matchFrameUnnormalized.flatMap((m) => [m.alliances.blue.team_keys.length, m.alliances.red.team_keys.length]));
+  if (largest === 2 || largest === 3) activeEvent.teams_per_alliance = largest;
+
+  matches = matchFrameUnnormalized;
+  renderRows();
+  saveDraft();
 });
 
 showView("list");

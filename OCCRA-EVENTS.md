@@ -64,6 +64,7 @@ Event (stored in the `data` column):
   start_date: "2026-10-24", end_date: "2026-10-25", location_name: "Oxford Highschool",
   event_type_string: "Offseason", district: { abbreviation: "occra", display_name: "OCCRA" },
   teams_per_alliance: 3, // 2 or 3; missing means 3
+  starting_points: { frc308: 12 }, // optional, added on top of each team's Alliance Points in computeRankings()
   matches: [ /* see below */ ]
 }
 ```

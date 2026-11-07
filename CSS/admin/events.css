@@ -89,6 +89,30 @@ input[type="date"] {
   max-width: 100%;
 }
 
+/* matches the page's text inputs (Index-login.css) */
+.event-starting-points {
+  display: block;
+  width: 500px;
+  max-width: 100%;
+  min-height: 100px;
+  max-height: 200px;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border: var(--theme-main-border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 16px;
+  margin: 0;
+  color: var(--theme-main-text);
+  background-color: var(--theme-main-button);
+  resize: vertical;
+  outline: none;
+  transition: all 0.2s;
+}
+.event-starting-points::placeholder {
+  color: var(--theme-secondary-text);
+}
+
 .scouters-table tbody tr {
   cursor: default !important;
 }
@@ -101,13 +125,32 @@ td:not(.r-round-num):not(.r-actions) {
   box-sizing: border-box;
   min-width: 7ch;
 }
+
+td.surrogate {
+  --surrogate-rgb: 120, 163, 255;
+  background-color: rgba(var(--surrogate-rgb), 0.15);
+  background-image: var(--striped-bg-img);
+  border: 1px solid rgba(var(--surrogate-rgb), 0.59) !important;
+}
+td.surrogate input {
+  color: rgb(var(--surrogate-rgb));
+}
+
+/* mark-surrogate mode: clicks toggle the cell instead of editing it */
+.marking-surrogates .team-input {
+  pointer-events: none;
+}
+.marking-surrogates td:has(.team-input) {
+  cursor: pointer;
+}
+
 .r-round-num {
   min-width: 4ch;
   width: fit-content;
   max-width: 5ch;
 }
 td:hover:not(.r-round-num):not(.r-actions) {
-  border: 1px solid var(--theme-secondary-text) !important;
+  border: 1px solid var(--theme-secondary-text);
 }
 .sh {
   background-color: rgba(var(--theme-main-rgb), 0.05);

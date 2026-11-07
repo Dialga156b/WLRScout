@@ -92,9 +92,9 @@ async function renderMatches(mData, scoutedData) {
     const blueScoreEl = matchEl.querySelector("#match-blue-score");
 
     if (estimated) {
-      // "~" since these are estimates from scouting, not real scores
-      redScoreEl.textContent = `~${Math.round(estimated.red)}`;
-      blueScoreEl.textContent = `~${Math.round(estimated.blue)}`;
+      // "~" since these are estimates from scouting, not real scores. no "~" for scout-reported official scores
+      redScoreEl.textContent = `${estimated.official.red ? "" : "~"}${Math.round(estimated.red)}`;
+      blueScoreEl.textContent = `${estimated.official.blue ? "" : "~"}${Math.round(estimated.blue)}`;
     } else {
       redScoreEl.textContent = `${match.alliances.red.score === (-1 || null) ? "-" : match.alliances.red.score}`;
       blueScoreEl.textContent = `${match.alliances.blue.score === (-1 || null) ? "-" : match.alliances.blue.score}`;

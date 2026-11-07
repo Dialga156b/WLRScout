@@ -101,6 +101,7 @@
   overflow-y: scroll;
   height: 100%;
   height: calc(100% - 40px);
+  min-height: 40dvh;
 }
 
 .form {

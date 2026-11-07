@@ -80,11 +80,25 @@
           </table>
         </div>
         <div class="schedule-actions">
+          <button class="mainBtn" id="copy-prompt-btn">
+            <ion-icon name="clipboard"></ion-icon>
+            Copy Prompt
+          </button>
+          <button class="mainBtn" id="paste-json-btn">
+            <ion-icon name="download"></ion-icon>
+            Paste JSON
+          </button>
+          <button class="mainBtn" id="mark-surrogate-btn" style="filter: sepia(324432);">
+            <ion-icon name="bookmark"></ion-icon>
+            <span class="mark-surrogate-label">Mark Surrogate</span>
+          </button>
+        </div>
+        <div class="schedule-actions">
           <button class="mainBtn" id="add-match-btn">
             <ion-icon name="add-circle"></ion-icon>
             Add Match
           </button>
-          <button class="mainBtn" id="delete-last-btn">
+          <button class="mainBtn" id="delete-last-btn" style="filter: sepia(324432) hue-rotate(300deg);">
             <ion-icon name="remove-circle"></ion-icon>
             Delete Last
           </button>
@@ -98,11 +112,11 @@
             <ion-icon name="arrow-undo"></ion-icon>
             Back
           </button>
-          <button class="mainBtn" id="save-schedule-btn">
+          <button class="mainBtn" id="save-schedule-btn" style="filter: sepia(324432) hue-rotate(50deg);">
             <ion-icon name="cloud-upload"></ion-icon>
             Save Schedule
           </button>
-          <button class="mainBtn" id="delete-event-btn" style="border-color: rgb(255, 0, 0); color: rgb(255, 0, 0);">
+          <button class="mainBtn" id="delete-event-btn" style="filter: sepia(324432) hue-rotate(300deg);">
             <ion-icon name="trash"></ion-icon>
             Delete Event
           </button>
@@ -138,6 +152,10 @@
               <ion-icon name="people"></ion-icon>
               <span class="alliance-size-label">3 Teams / Alliance</span>
             </button>
+          </div>
+          <div>
+            <h4>STARTING ALLIANCE POINTS (OPTIONAL)</h4>
+            <textarea id="event-starting-points" class="event-starting-points" rows="4" placeholder="team then points, one per line:&#10;308 19&#10;7553: 5"></textarea>
           </div>
           <div style="display: flex; flex-direction: row;">
             <div class="readout" style="align-items: flex-start;">

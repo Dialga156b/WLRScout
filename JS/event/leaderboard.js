@@ -75,7 +75,7 @@ async function reorganizeLeaderboardData() {
     var evRaw = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`)) ?? {};
     // custom (OCCRA) events have no TBA rankings, build them from the schedule + scouting instead.
     // always recomputed (it's cheap) so it's never stuck on rankings from an older cache
-    const raw = isCustomEventKey(eventKey) ? computeRankings(evRaw.mData, evRaw.scoutedData) : (evRaw.rankings ?? (await TBA_GET(`/event/${eventKey}/rankings`)));
+    const raw = isCustomEventKey(eventKey) ? computeRankings(evRaw.mData, evRaw.scoutedData, evRaw.eventDetails?.starting_points) : (evRaw.rankings ?? (await TBA_GET(`/event/${eventKey}/rankings`)));
     if (!raw || !raw.rankings) return { tbaColumns: [], scoutedColumns: getScoutedColumns(), rows: [] };
     evRaw.rankings = raw;
     localStorage.setItem(`eventCache_${eventKey}`, JSON.stringify(evRaw));
