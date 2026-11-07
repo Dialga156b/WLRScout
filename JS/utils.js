@@ -207,7 +207,8 @@ export function computeRankings(mData, scoutedRows = [], startingPoints = {}) {
       for (const teamKey of alliance.team_keys) {
         if (!teamKey) continue;
         const t = (teams[teamKey] ??= { wins: 0, losses: 0, ties: 0, played: 0, totalPoints: 0, alliancePoints: 0, startingPoints: 0, scouted: 0 });
-        if (!result) continue;
+        // a surrogate match doesn't count for that team at all (played, record or points)
+        if (!result || alliance.surrogate_team_keys?.includes(teamKey)) continue;
         t.played++;
         t.alliancePoints += allianceTotal;
         // a match where this team wasn't scouted still counts for wins, just not for the points average
