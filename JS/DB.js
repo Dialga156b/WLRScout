@@ -74,9 +74,10 @@ export async function deleteEvent(key) {
   if (!res.ok) throw new Error(`Failed to delete event ${key} (${res.status})`);
 }
 
-export async function questionDB(method, data, fetchOptions = {}) {
+export async function questionDB(method, data, fetchOptions = {}, version) {
   if (method === "GET") {
-    const res = await fetch("https://data.bheitz780.workers.dev/questions", fetchOptions);
+    const query = version != null ? `?version=${encodeURIComponent(version)}` : "";
+    const res = await fetch(`https://data.bheitz780.workers.dev/questions${query}`, fetchOptions);
     const questionData = await res.json();
     return questionData;
   } else if (method === "POST") {

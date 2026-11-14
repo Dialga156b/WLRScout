@@ -200,17 +200,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const cachedBundle = localStorage.getItem(CACHE_KEY);
 
-    let mData, eventDetails, scoutedData;
+    let mData, eventDetails, scoutedData, questionsData, eventQuestionsData;
 
     if (cachedBundle) {
       console.log("Using cached event bundle");
-      ({ mData, eventDetails, scoutedData } = JSON.parse(cachedBundle));
+      ({ mData, eventDetails, scoutedData, questionsData, eventQuestionsData } = JSON.parse(cachedBundle));
     } else {
       console.log("No cached data, fetching from TBA");
-      ({ mData, eventDetails, scoutedData } = await newEventCache(eventKey, () => questionDB("GET")));
+      ({ mData, eventDetails, scoutedData, questionsData, eventQuestionsData } = await newEventCache(eventKey, () => questionDB("GET")));
     }
     const eventName = `${eventDetails.year} ${eventDetails.district?.abbreviation?.toUpperCase() || eventDetails.short_name} ${eventDetails.short_name} Event`;
-    eventNameHeader.textContent = eventName;
+    const formVersion = (eventQuestionsData ?? questionsData)?.version;
+    eventNameHeader.textContent = formVersion != null ? `${eventName} (v${formVersion})` : eventName;
     eventCodeHeader.textContent = eventKey || "Event Code";
 
     const userData = JSON.parse(localStorage.getItem("userProfile"));

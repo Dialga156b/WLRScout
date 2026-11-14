@@ -611,9 +611,13 @@ export async function newEventCache(eventKey, questionsFetcher) {
 
   if (isCustom) markScoutedMatches(mData, scoutedData?.data);
 
+  // the questionnaire the event was actually scouted with (newest version among its submissions).
+  // questionsData stays the current one since the scout form needs that
+  const eventQuestionsData = await getEventQuestions(scoutedData?.data, questionsData);
+
   const lastUpdated = new Date().getTime();
   //sorted, per-team averages. HELL! HELL! HELL!
-  const scoutedDataPTAvgs = scoutedData?.data ? getAllTeamAverages(scoutedData.data, questionsData) : {};
+  const scoutedDataPTAvgs = scoutedData?.data ? getAllTeamAverages(scoutedData.data, eventQuestionsData) : {};
   const scoutedDataPTAvgsFlat = {};
   for (const team in scoutedDataPTAvgs) {
     scoutedDataPTAvgsFlat[team] = {};
@@ -623,11 +627,28 @@ export async function newEventCache(eventKey, questionsFetcher) {
       }
     }
   }
-  const cache = { mData, eventDetails, lastUpdated, questionsData, scoutedData: scoutedData.data, scoutedDataPTAvgs, scoutedDataPTAvgsFlat };
+  const cache = { mData, eventDetails, lastUpdated, questionsData, eventQuestionsData, scoutedData: scoutedData.data, scoutedDataPTAvgs, scoutedDataPTAvgsFlat };
   if (isCustom) cache.rankings = computeRankings(mData, scoutedData?.data, eventDetails?.starting_points);
   localStorage.setItem(`eventCache_${eventKey}`, JSON.stringify(cache));
   localStorage.setItem("currentEventKey", eventKey);
   return cache;
+}
+
+async function getEventQuestions(scoutedData, currentQuestions) {
+  let version = -1;
+  for (const i in scoutedData ?? {}) {
+    try {
+      const v = Number(JSON.parse(scoutedData[i].data)?.questions?.version);
+      if (v > version) version = v;
+    } catch {}
+  }
+  if (version < 0 || String(version) === String(currentQuestions?.version)) return currentQuestions;
+  try {
+    const old = await questionDB("GET", null, {}, version);
+    return old?.data ? old : currentQuestions;
+  } catch {
+    return currentQuestions; // offline or version missing, current is better than nothing
+  }
 }
 
 export function getAllTeamAverages(scoutedData, questionsData) {

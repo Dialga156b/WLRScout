@@ -46,7 +46,7 @@ initLeaderboard();
 
 function getQuestionsFlat() {
   const evRaw = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`)) ?? {};
-  const questions = evRaw.questionsData.data;
+  const questions = (evRaw.eventQuestionsData ?? evRaw.questionsData).data;
   var sorted = {};
   for (const category in questions) {
     for (const questionID in questions[category]) {

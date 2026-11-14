@@ -113,7 +113,8 @@ async function getTeamData(teamKey, matchID = null) {
   const layoutRef = submissions.find((s) => getVersion(s) === maxVersion);
   const validQuestions = new Set(Object.keys(layoutRef ?? {}));
   console.warn(layoutRef, maxVersion);
-  const questionsRaw = JSON.parse(localStorage.getItem(`eventCache_${localStorage.getItem("currentEventKey")}`))?.questionsData?.data ?? {};
+  const evCache = JSON.parse(localStorage.getItem(`eventCache_${localStorage.getItem("currentEventKey")}`));
+  const questionsRaw = (evCache?.eventQuestionsData ?? evCache?.questionsData)?.data ?? {};
   const questionTypes = {};
   for (const categoryID in questionsRaw) {
     for (const question of questionsRaw[categoryID]) {
@@ -267,7 +268,8 @@ async function loadHero(key, teamData, scouter = "N/A") {
 }
 
 function renderStats(teamData) {
-  const questionsRaw = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`)).questionsData?.data;
+  const evCache = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`));
+  const questionsRaw = (evCache.eventQuestionsData ?? evCache.questionsData)?.data;
 
   const questionLookup = {};
   for (const categoryID in questionsRaw) {
