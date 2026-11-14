@@ -32,7 +32,6 @@ async function getCustomEvents() {
 }
 
 // OCCRA scoring changes every season SO THIS IS HARDCODED FOR NOW!!!! UPDATE THIS!!!
-// question ids have points PER ROBOT. counters are points per ball, toggles are points if true. anything not listed is worth 0
 const OCCRA_POINT_VALUES = {
   moved: 1,
   auton_high: 3,
@@ -42,6 +41,9 @@ const OCCRA_POINT_VALUES = {
   bonus_high: 3,
   bonus_low: 2,
 };
+
+// special questions!! ooh spooky!!
+
 // added ONCE to the winning alliance's score (not per robot), so it isn't part of any one team's own points
 const OCCRA_WIN_POINTS = 10;
 const OCCRA_WON_QUESTION = "won";

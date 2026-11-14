@@ -1,4 +1,5 @@
-import { TBA_GET, getUserTeam, isActiveEvent, newEventCache } from "./utils.js";
+import { getDB } from "./DB.js";
+import { TBA_GET, getUserTeam, isActiveEvent, newEventCache, showChoicePopup } from "./utils.js";
 
 const userProfile = JSON.parse(localStorage.getItem("userProfile")) || {};
 
@@ -75,20 +76,33 @@ setupBtn.addEventListener("click", () => {
 
 async function toggleDebug() {
   const now = new Date();
-  const year = now.getFullYear();
+  const events = await getDB("/db");
 
-  for (const y of [year, year - 1]) {
-    const eventsRaw = Object.entries(localStorage);
-    const events = eventsRaw.filter(([key]) => key.startsWith("eventCache_")).map(([key, value]) => JSON.parse(value));
-    events.sort((a, b) => new Date(b.eventDetails.end_date) - new Date(a.eventDetails.end_date));
-    console.log(events[0]);
-    if (events.length) {
-      location.href = location.pathname + `?dbID=${events[0].eventDetails.key}`;
-      return;
+  events.data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  let choices = [];
+  for (let i = 0; i < events.data.length; i++) {
+    const thisEvent = events.data[i];
+    const thisData = JSON.parse(thisEvent.data);
+    const end_date = new Date(thisData.end_date);
+    //console.log(thisEvent.created_at);
+    const days = (now - end_date) / (1000 * 60 * 60 * 24);
+
+    async function load() {
+      newEventCache(thisData.key);
+      console.log(thisData);
+      location.href = location.pathname + `?dbID=${thisData.key}&msg=Cache created / reloaded for event ${thisData.short_name.toUpperCase()}`;
+    }
+    if (i < 5) {
+      choices.push({
+        icon: "calendar",
+        label: `${thisData.short_name} (${Math.round(days)} Days Ago)`,
+        onClick: () => load(),
+      });
     }
   }
 
-  alert("Couldn't find a past event to debug with!!!!! This button only works if you've viewed another event on the app before");
+  showChoicePopup(`Found ${events.data.length} Events...`, choices);
 }
 
 reload();

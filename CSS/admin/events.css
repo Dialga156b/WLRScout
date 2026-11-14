@@ -89,7 +89,6 @@ input[type="date"] {
   max-width: 100%;
 }
 
-/* matches the page's text inputs (Index-login.css) */
 .event-starting-points {
   display: block;
   width: 500px;

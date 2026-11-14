@@ -2,12 +2,16 @@
 
 <head>
   <link rel="stylesheet" type="text/css" href="../CSS/global.css" />
+  <link rel="stylesheet" type="text/css" href="../CSS/admin/admin.css" />
   <link rel="stylesheet" type="text/css" href="../CSS/Index-login.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Text:ital@0;1&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Serif+Text:ital@0;1&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap"
+    rel="stylesheet" />
 
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
   <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
 </head>
@@ -30,6 +34,25 @@
       </div>
       <div class="error blue hidden" style="filter: hue-rotate(13deg)" id="errMsg"></div>
     </div>
+
+    <div id="choice-popup" class="choice-hidden">
+      <div class="c-frame themed-frosted">
+        <h2 id="choice-header">..</h2>
+        <hr>
+        <div class="c-list">
+          <button class="mainBtn hidden" id="choice-btn-template">
+            <ion-icon class="btn-icon" name="add-circle"></ion-icon>
+            ..
+          </button>
+
+        </div>
+      </div>
+      <button class="mainBtn" id="close-frame-btn">
+        <ion-icon name="close-circle"></ion-icon>
+        Cancel
+      </button>
+    </div>
+
     <footer>
       <div class="footer">
         <a href="https://walledlakerobotics.com">
@@ -51,7 +74,8 @@
         <button class="mini-btn" style="border-color: #3f51b5" onclick="window.open('https://www.thebluealliance.com')">
           <img class="ionicon blue" src="https://www.thebluealliance.com/images/tba_lamp.svg" />
         </button>
-        <button class="mini-btn" style="border: 1px solid rgb(255, 0, 0); background-color: #ff000013" onclick="logout()">
+        <button class="mini-btn" style="border: 1px solid rgb(255, 0, 0); background-color: #ff000013"
+          onclick="logout()">
           <ion-icon name="log-out-outline" style="color: rgb(255, 0, 0)"></ion-icon>
         </button>
       </div>
