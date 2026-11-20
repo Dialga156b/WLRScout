@@ -19,7 +19,8 @@
       "title-single": "Toggle (Single Match)",
       "category-override": false,
       "visibility": "both",
-      "type": "bar"
+      "type": "bar",
+      "higher-is-better__R": true
     }
   },
   "dropdown": {
@@ -41,7 +42,8 @@
       "title-single": "Dropdown (Single Match)",
       "category-override": false,
       "visibility": "both",
-      "type": "pill"
+      "type": "pill",
+      "higher-is-better__R": true
     }
   },
   "text": {
@@ -64,7 +66,8 @@
       "title-single": "Text (Single Match)",
       "category-override": false,
       "visibility": "both",
-      "type": "pill"
+      "type": "pill",
+      "higher-is-better__R": true
     }
   },
   "slider": {
@@ -91,7 +94,8 @@
       "title-single": "Slider (Single Match)",
       "category-override": false,
       "visibility": "both",
-      "type": "bar"
+      "type": "bar",
+      "higher-is-better__R": true
     }
   },
   "counter": {
@@ -112,7 +116,8 @@
       "title-single": "Counter (Single Match)",
       "category-override": false,
       "visibility": "both",
-      "type": "bar"
+      "type": "bar",
+      "higher-is-better__R": true
     }
   },
   "timer": {
@@ -133,7 +138,8 @@
       "title-single": "Timer (Single Match)",
       "category-override": false,
       "visibility": "both",
-      "type": "bar"
+      "type": "bar",
+      "higher-is-better__R": true
     }
   },
   "textarea": {
@@ -150,7 +156,8 @@
       "title-single": "Notes",
       "category-override": "general",
       "visibility": "single",
-      "type": "txt"
+      "type": "txt",
+      "higher-is-better__R": true
     }
   }
 }
