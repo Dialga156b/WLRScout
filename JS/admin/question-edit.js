@@ -228,7 +228,6 @@ function lockRemoveBtn(btn) {
   btn.innerHTML = `<ion-icon name="lock-closed"></ion-icon>`;
 }
 
-// template keys carry __R/__D markers, stored questions never should (including inside categories like leaderboard__R)
 function stripTemplateSuffixes(obj) {
   if (typeof obj != "object" || obj === null || Array.isArray(obj)) return obj;
   Object.keys(obj).forEach((templateKey) => {
@@ -244,7 +243,6 @@ function stripTemplateSuffixes(obj) {
 const QUESTION_ID_PATTERN = /^[A-Za-z_]+$/;
 const DEPENDENCY_PATTERN = /^!?[A-Za-z_]+\[.*\]$/; // question_id[state] or !question_id[state]
 
-// returns an error message, or null if the value is fine
 function validateParam(category, key, value) {
   if (category) return null;
   if (key == "id" && !QUESTION_ID_PATTERN.test(value)) return "Question IDs can only use letters and underscores.";
@@ -399,7 +397,6 @@ function populateEditPanel() {
   paramList.querySelectorAll(".param-added").forEach((el) => el.remove());
   paramScroll.querySelectorAll(".param-category").forEach((el) => el.remove());
   if (!question) return;
-  // questions made before suffixes were stripped everywhere can still have keys like higher-is-better__R
   if (JSON.stringify(question).match(/__[RD]"\s*:/)) {
     updateQuestionJSON(stripTemplateSuffixes);
     stripTemplateSuffixes(question);
@@ -410,7 +407,7 @@ function populateEditPanel() {
     if (isLockedKey(scope, key)) return;
     const templateDefault = scope[key] ?? scope[`${key}__R`];
     if (templateDefault !== null && typeof templateDefault == "object" && (typeof value != "object" || value === null)) {
-      // older configs use things like "leaderboard": false — normalize to an empty container
+      // older configs use things like "leaderboard": false, so normalize to an empty container
       value = Array.isArray(templateDefault) ? [] : {};
       setParamValue(null, key, value);
     }
