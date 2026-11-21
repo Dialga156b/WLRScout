@@ -413,7 +413,17 @@ if (inspectType == "team") {
       .map((team) => ({ teamNum: team, label: `Team ${team}` }));
   }
 
+  // coming from a team's page (?team=7178) should open on that team and not Blue 1
+  const normalizeTeam = (t) => String(Number(String(t).trim()));
+  const teamParam = URLParams.get("team");
   let currentIndex = 0;
+  if (teamParam) {
+    currentIndex = teams.findIndex((t) => normalizeTeam(t.teamNum) === normalizeTeam(teamParam));
+    if (currentIndex === -1) {
+      teams.push({ teamNum: normalizeTeam(teamParam), label: `Team ${normalizeTeam(teamParam)}` });
+      currentIndex = teams.length - 1;
+    }
+  }
 
   async function loadTeam(index) {
     const { teamNum, label } = teams[index];
@@ -442,15 +452,8 @@ if (inspectType == "team") {
     loadTeam(currentIndex);
   });
 
-  const teamParam = URLParams.get("team");
-  const startIndex = teamParam
-    ? Math.max(
-        0,
-        teams.findIndex((t) => t.teamNum === teamParam)
-      )
-    : 0;
   if (teams.length > 0) {
-    await loadTeam(startIndex);
+    await loadTeam(currentIndex);
   } else {
     mts.style.display = "none";
     document.getElementById("team-name").textContent = "No data for this match";

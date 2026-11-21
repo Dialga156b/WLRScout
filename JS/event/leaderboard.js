@@ -15,10 +15,32 @@ export const LEADERBOARD_COLUMNS_OFFLINE = [
   { id: "ap-potential", label: "AP Potential" },
 ];
 
-// derived from other stats in createTeam, not questions. only shown when the question they need exists
+// ones with compute() get their value from the team's averages, the rest are filled in by createTeam
 const LEADERBOARD_COLUMNS_DERIVED = [
-  { id: "AFC", label: "Avg Fuel Contribution", needs: "contribution" },
-  { id: "AAFC", label: "ESTIMATED Auton Fuel", needs: "contribution" },
+  { id: "AFC", label: "Avg Fuel Contribution", needs: ["contribution"] },
+  { id: "AAFC", label: "ESTIMATED Auton Fuel", needs: ["contribution"] },
+  {
+    id: "auton-accuracy",
+    label: "Auton Accuracy %",
+    needs: ["auton_high", "auton_low", "auton_missed"],
+    compute: (avgs) => {
+      const avg = (id) => (typeof avgs[id]?.value === "number" ? avgs[id].value : 0);
+      const made = avg("auton_high") + avg("auton_low");
+      const shot = made + avg("auton_missed");
+      return shot > 0 ? Math.round((made / shot) * 100) : "-";
+    },
+  },
+  {
+    id: "teleop-accuracy",
+    label: "Teleop Accuracy %",
+    needs: ["teleop_high", "teleop_low", "teleop_missed"],
+    compute: (avgs) => {
+      const avg = (id) => (typeof avgs[id]?.value === "number" ? avgs[id].value : 0);
+      const made = avg("teleop_high") + avg("teleop_low");
+      const shot = made + avg("teleop_missed");
+      return shot > 0 ? Math.round((made / shot) * 100) : "-";
+    },
+  },
 ];
 export let LEADERBOARD_COLUMNS = [];
 
@@ -66,7 +88,7 @@ function getScoutedColumns() {
   const columns = Object.values(qFlat)
     .filter((question) => question?.leaderboard?.["lb-header"])
     .map((question) => ({ id: question.id, label: question.leaderboard["lb-header"], lowerIsBetter: question.leaderboard["higher-is-better"] === false }));
-  const derived = LEADERBOARD_COLUMNS_DERIVED.filter((col) => qFlat[col.needs]).map(({ id, label }) => ({ id, label }));
+  const derived = LEADERBOARD_COLUMNS_DERIVED.filter((col) => col.needs.every((id) => qFlat[id])).map(({ id, label, compute }) => ({ id, label, compute }));
   return [...columns, ...derived];
 }
 
@@ -115,9 +137,16 @@ async function reorganizeLeaderboardData() {
         const teamID = entry.team_key.slice(3);
         const question = qFlat[col.id] || {};
 
+        if (col.compute) {
+          stats[col.id] = col.compute(evRaw.scoutedDataPTAvgsFlat?.[teamID] ?? {});
+          return;
+        }
+
+        // let, not var: a var kept the previous column's value whenever the lookup below threw
+        let out;
         try {
           const res = evRaw.scoutedDataPTAvgsFlat[teamID][col.id];
-          var out = res.value;
+          out = res.value;
 
           if (out === "_IGNORE") {
             out = "[N/A]";
@@ -198,6 +227,30 @@ function colorStatCellsRelative(columns) {
 
 var inspectedTeam = null;
 
+// teams whose most recent scouted match has ended_broken: true. if that match was scouted more than once, any "yes" counts
+function getEndedBrokenTeams() {
+  const scoutedData = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`))?.scoutedData ?? [];
+  const latest = {}; // team { match, broken }
+  for (const row of Object.values(scoutedData)) {
+    let answers = {};
+    try {
+      const data = JSON.parse(row.data)?.questions?.data ?? {};
+      for (const category in data) Object.assign(answers, data[category]);
+    } catch {
+      continue;
+    }
+    const team = String(Number(String(answers.team ?? "").trim()));
+    const match = Number(answers.match);
+    if (!answers.team || team === "NaN" || !Number.isFinite(match)) continue;
+    const broken = answers.ended_broken === true || answers.ended_broken === "true";
+
+    const prev = latest[team];
+    if (!prev || match > prev.match) latest[team] = { match, broken };
+    else if (match === prev.match) prev.broken ||= broken;
+  }
+  return new Set(Object.keys(latest).filter((team) => latest[team].broken));
+}
+
 // teams picked with the mini button, saved per event so the "Selection" leaderboard survives reloads
 const SELECTION_KEY = `lbSelection_${eventKey}`;
 function getSelection() {
@@ -220,6 +273,7 @@ export async function loadLeaderboard() {
     el.querySelector(".team-id").textContent = teamNumber;
     el.querySelector(".team-logo").src = `https://www.thebluealliance.com/avatar/${TEAM_AVATAR_YEAR}/frc${teamNumber}.png`;
     el.querySelector(".team-rank").textContent = stats.rank ?? "N/A";
+    el.querySelector(".team-rank").classList.toggle("rank-broken", endedBrokenTeams.has(String(Number(teamNumber))));
 
     const statElTemplate = el.querySelector(".team-stat");
     if (statElTemplate !== undefined) {
@@ -282,7 +336,7 @@ export async function loadLeaderboard() {
       else selection.add(teamNumber);
       saveSelection(selection);
       updateSelectIcon();
-      // removing a team while viewing the selection should drop it from the list right away
+      // removing while viewing should drop it right away
       if (lbSets[currentLbIndex].isSelection) renderLb();
     });
 
@@ -306,8 +360,9 @@ export async function loadLeaderboard() {
   }
 
   const { tbaColumns, scoutedColumns, rows } = await reorganizeLeaderboardData();
+  const endedBrokenTeams = getEndedBrokenTeams();
 
-  // OCCRA's "TBA" columns are our own computed wins/scores, so they get a different name
+  // OCCRA's version of "TBA" columns are our own computed wins/scores, so they get a different name
   const lbSets = [
     { label: isCustomEventKey(eventKey) ? "Results" : "TBA", columns: tbaColumns },
     { label: "Local", columns: scoutedColumns },

@@ -276,6 +276,16 @@
   gap: 0;
 }
 
+.action-btn.mini-btn ion-icon {
+  position: static;
+  transform: none;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  max-width: none;
+  max-height: none;
+}
+
 .action-btn.mini-btn:hover {
   padding: 16px 16px;
 }

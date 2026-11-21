@@ -6,11 +6,15 @@ const resetBtn = document.getElementById("resetBtn");
 const qrPopup = document.getElementById("qr-popup");
 const qrBtn = document.getElementById("qrBtn");
 const reloadBtn = document.getElementById("reloadBtn");
+const submitInfoCheck = document.getElementById("info-check");
 
 const URLSP = new URLSearchParams(window.location.search);
 const showSetupNotif = URLSP.get("setupComplete");
 var eventKey = URLSP.get("eventKey") || localStorage.getItem("currentEventKey") || null;
 
+// reassigned in init() once the cache for the (possibly just switched) event is loaded
+let currentEvent = JSON.parse(localStorage.getItem("eventCache_" + localStorage.getItem("currentEventKey")));
+console.log(currentEvent);
 if (!eventKey) {
   const res = await isActiveEvent();
   eventKey = res.event?.key;
@@ -67,11 +71,23 @@ export async function updateResponse(elementId, value, dontupdate) {
     saveResponses();
     console.log("Responses updated:", responses);
   }
+
+  submitInfoCheck.querySelector("#info-check-team").innerHTML = `TEAM: <b>${getResponseByID("team") || "-"}</b>`;
+  submitInfoCheck.querySelector("#info-check-match").innerHTML = `MATCH: <b>${getResponseByID("match") || "-"}</b>`;
+  submitInfoCheck.querySelector("#info-check-event").innerHTML = `EVENT: <b>${currentEvent?.eventDetails?.short_name ?? eventKey}</b>`;
+}
+
+function getResponseByID(questionID) {
+  const meta = questionLookup[questionID];
+  if (!meta) return null;
+  return responses[meta.categoryId]?.[meta.questionIndex] ?? null;
 }
 
 // "question_id[state]" shows only while that question equals state, "!question_id[state]" hides while it does
 function parseDependency(dep) {
-  const match = String(dep).trim().match(/^(!?)([A-Za-z_]+)\[(.*)\]$/);
+  const match = String(dep)
+    .trim()
+    .match(/^(!?)([A-Za-z_]+)\[(.*)\]$/);
   if (!match) return { negate: false, id: String(dep).trim(), state: null };
   return { negate: match[1] === "!", id: match[2], state: match[3] };
 }
@@ -279,6 +295,21 @@ async function init() {
   const forceRefresh = localStorage.getItem("reloadQuestions") === "true";
   if (forceRefresh) localStorage.removeItem("reloadQuestions");
 
+  // the reload button also re-checks which event is live, so scouters don't stay stuck on the event from two freaking weeks ago thanks guys
+  let changedEvent = null;
+  if (forceRefresh && navigator.onLine) {
+    const res = await isActiveEvent();
+    if (res?.isActive && res.event?.key && res.event.key !== eventKey) {
+      changedEvent = { from: eventKey, to: res.event };
+      eventKey = res.event.key;
+      localStorage.setItem("currentEventKey", eventKey);
+      if (URLSP.has("eventKey")) {
+        URLSP.set("eventKey", eventKey);
+        history.replaceState(null, "", `${location.pathname}?${URLSP}`);
+      }
+    }
+  }
+
   let cache = JSON.parse(localStorage.getItem(`eventCache_${eventKey}`));
   const oldVer = cache?.questionsData?.version || "?";
   console.log(forceRefresh);
@@ -298,10 +329,14 @@ async function init() {
     popupError("No internet connection and previous data unavailable. no questions will be displayed.");
     return;
   }
+  currentEvent = cache;
   if (!failed && showSetupNotif) {
     URLSP.delete("setupComplete");
     history.replaceState(null, "", `${location.pathname}?${URLSP}`);
     showPopup(true, "Ready for Offline", "You're all set!\nAdd this page to your home screen to be ready for game day <b>(share > more > add to home screen)</b>.\n\nIn the mean time, get used to the questions shown here. This prompt won't be shown again.");
+  } else if (changedEvent) {
+    // the version check below would compare against a different event's questions, so this replaces it
+    showPopup(true, "Notice", `Active event has changed:\n\n<b>${changedEvent.from ?? "None"} -> ${changedEvent.to.key}</b>\n${changedEvent.to.name ?? ""}\n\nPlease confirm your responses before submitting.`);
   } else if (forceRefresh && cache.questionsData.version && String(cache.questionsData.version) !== String(oldVer)) {
     showPopup(true, "Notice", `Questionnaire has been updated:\n\n<b>v${oldVer} -> v${cache.questionsData.version}</b>\n\nPlease confirm your responses before submitting.`);
   }

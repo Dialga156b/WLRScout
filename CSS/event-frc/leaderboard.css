@@ -319,6 +319,12 @@
   max-height: fit-content;
 }
 
+/* their last scouted match ended with the robot broken */
+.team-rank.rank-broken {
+  color: #ff6d4a;
+  text-shadow: 0px 0px 20px #ff2121;
+}
+
 .team-sub-rank {
   display: flex;
   justify-content: center;
