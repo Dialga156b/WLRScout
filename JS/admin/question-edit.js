@@ -228,6 +228,33 @@ function lockRemoveBtn(btn) {
   btn.innerHTML = `<ion-icon name="lock-closed"></ion-icon>`;
 }
 
+// template keys carry __R/__D markers, stored questions never should (including inside categories like leaderboard__R)
+function stripTemplateSuffixes(obj) {
+  if (typeof obj != "object" || obj === null || Array.isArray(obj)) return obj;
+  Object.keys(obj).forEach((templateKey) => {
+    stripTemplateSuffixes(obj[templateKey]);
+    const key = templateKey.replace(/__[RD]$/, "");
+    if (key == templateKey) return;
+    obj[key] = obj[templateKey];
+    delete obj[templateKey];
+  });
+  return obj;
+}
+
+const QUESTION_ID_PATTERN = /^[A-Za-z_]+$/;
+const DEPENDENCY_PATTERN = /^!?[A-Za-z_]+\[.*\]$/; // question_id[state] or !question_id[state]
+
+// returns an error message, or null if the value is fine
+function validateParam(category, key, value) {
+  if (category) return null;
+  if (key == "id" && !QUESTION_ID_PATTERN.test(value)) return "Question IDs can only use letters and underscores.";
+  if (key == "depends") {
+    const bad = value.filter((dep) => !DEPENDENCY_PATTERN.test(dep));
+    if (bad.length) return `Depends entries must look like question_id[state] or !question_id[state]:\n${bad.join("\n")}`;
+  }
+  return null;
+}
+
 const parseArrayInput = (str) =>
   str
     .split(",")
@@ -274,11 +301,20 @@ function newParamFromKey(key, value, category = null, container = paramList) {
     //text (also covers numbers and comma-separated arrays)
     el = paramTextTemplate.cloneNode(true);
     const input = el.querySelector(".param-text-input");
-    input.value = Array.isArray(value) ? value.join(", ") : value;
+    const format = (v) => (Array.isArray(v) ? v.join(", ") : v);
+    input.value = format(value);
+    let lastValue = value;
     input.addEventListener("change", () => {
       let newValue = input.value;
       if (Array.isArray(value)) newValue = parseArrayInput(input.value);
       else if (typeof value == "number") newValue = Number(input.value) || 0;
+      const error = validateParam(category, key, newValue);
+      if (error) {
+        alert(error);
+        input.value = format(lastValue);
+        return;
+      }
+      lastValue = newValue;
       setParamValue(category, key, newValue);
     });
   }
@@ -328,7 +364,18 @@ function newCategorySection(category, value) {
     //arrays edit as one comma-separated list
     const input = paramTextTemplate.querySelector(".param-text-input").cloneNode(true);
     input.value = value.join(", ");
-    input.addEventListener("change", () => setParamValue(null, category, parseArrayInput(input.value)));
+    let lastValue = value;
+    input.addEventListener("change", () => {
+      const newValue = parseArrayInput(input.value);
+      const error = validateParam(null, category, newValue);
+      if (error) {
+        alert(error);
+        input.value = lastValue.join(", ");
+        return;
+      }
+      lastValue = newValue;
+      setParamValue(null, category, newValue);
+    });
     section.appendChild(input);
   } else {
     const addBtn = document.createElement("button");
@@ -352,6 +399,11 @@ function populateEditPanel() {
   paramList.querySelectorAll(".param-added").forEach((el) => el.remove());
   paramScroll.querySelectorAll(".param-category").forEach((el) => el.remove());
   if (!question) return;
+  // questions made before suffixes were stripped everywhere can still have keys like higher-is-better__R
+  if (JSON.stringify(question).match(/__[RD]"\s*:/)) {
+    updateQuestionJSON(stripTemplateSuffixes);
+    stripTemplateSuffixes(question);
+  }
 
   const scope = templateScope(question);
   Object.entries(question).forEach(([key, value]) => {
@@ -455,7 +507,7 @@ function showChoicePopup(show, subject) {
     if (existingKeys.includes(key)) return; // only offer what the question doesn't have yet
 
     newChoiceBtn(key, () => {
-      addParamToQuestion(subject, key, structuredClone(value));
+      addParamToQuestion(subject, key, stripTemplateSuffixes(structuredClone(value)));
       showChoicePopup(false);
     });
   });
@@ -469,7 +521,7 @@ function createNewQuestion(type) {
   const question = {};
   Object.entries(questionParams[type]).forEach(([templateKey, value]) => {
     if (templateKey.endsWith("__R") || templateKey.endsWith("__D")) {
-      question[templateKey.replace(/__[RD]$/, "")] = structuredClone(value);
+      question[templateKey.replace(/__[RD]$/, "")] = stripTemplateSuffixes(structuredClone(value));
     }
   });
 
@@ -478,7 +530,9 @@ function createNewQuestion(type) {
     .flat()
     .map((q) => q.id);
   let id = question.id;
-  for (let n = 2; allIDs.includes(id); n++) id = `${question.id}_${n}`;
+  // suffix with letters, not numbers, since ids are letters and underscores only (new_toggle_b, new_toggle_c..)
+  const toLetters = (n) => (n > 26 ? toLetters(Math.floor((n - 1) / 26)) : "") + String.fromCharCode(97 + ((n - 1) % 26));
+  for (let n = 2; allIDs.includes(id); n++) id = `${question.id}_${toLetters(n)}`;
   question.id = id;
 
   cache.questionsData.data[currentSelectedTabKey].push(question);

@@ -83,7 +83,6 @@
     "required": false,
     "offline": false,
     "depends": [],
-    "hide-dependencies": [],
     "info": {
       "header": "About This Question",
       "body": "Optional help text shown when the user taps the info icon."

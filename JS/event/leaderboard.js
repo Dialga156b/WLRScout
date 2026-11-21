@@ -65,7 +65,7 @@ function getScoutedColumns() {
   } catch {} // no questions cached yet
   const columns = Object.values(qFlat)
     .filter((question) => question?.leaderboard?.["lb-header"])
-    .map((question) => ({ id: question.id, label: question.leaderboard["lb-header"] }));
+    .map((question) => ({ id: question.id, label: question.leaderboard["lb-header"], lowerIsBetter: question.leaderboard["higher-is-better"] === false }));
   const derived = LEADERBOARD_COLUMNS_DERIVED.filter((col) => qFlat[col.needs]).map(({ id, label }) => ({ id, label }));
   return [...columns, ...derived];
 }
@@ -179,13 +179,17 @@ function colorStatCellsRelative(columns) {
 
       if (isNaN(val) || min === max) return;
 
+      // lower-is-better columns flip the scale so the lowest value is green
+      const lowerIsBetter = columns[colIndex]?.lowerIsBetter;
       const ratio = (val - min) / (max - min);
-      const hue = ratio * 120;
+      const hue = (lowerIsBetter ? 1 - ratio : ratio) * 120;
       stat.style.backgroundColor = `hsla(${hue}, 80%, 45%, var(--stat-bg-opacity))`;
 
-      if (val == max) {
+      const best = lowerIsBetter ? min : max;
+      const worst = lowerIsBetter ? max : min;
+      if (val == best) {
         stat.classList.add("match-high");
-      } else if (val == min) {
+      } else if (val == worst) {
         stat.classList.add("match-low");
       }
     });
@@ -193,6 +197,19 @@ function colorStatCellsRelative(columns) {
 }
 
 var inspectedTeam = null;
+
+// teams picked with the mini button, saved per event so the "Selection" leaderboard survives reloads
+const SELECTION_KEY = `lbSelection_${eventKey}`;
+function getSelection() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(SELECTION_KEY)) ?? []);
+  } catch {
+    return new Set();
+  }
+}
+function saveSelection(selection) {
+  localStorage.setItem(SELECTION_KEY, JSON.stringify([...selection]));
+}
 
 export async function loadLeaderboard() {
   const teamList = document.getElementById("team-list");
@@ -243,20 +260,37 @@ export async function loadLeaderboard() {
 
     colorStatCellsRelative(columns);
 
-    const actionBtn = el.querySelector("#action-btn");
-
+    const actionBtns = el.querySelector("#action-btns");
+    const actionBtn = actionBtns.querySelector("#action-btn");
     actionBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (!actionBtn.classList.contains("hidden")) {
+      if (!actionBtns.classList.contains("hidden")) {
         location.href = `/HTML/inspect.html?type=team&key=${teamNumber}`;
       }
     });
 
+    const selectBtn = actionBtns.querySelector(".mini-btn");
+    const updateSelectIcon = () => {
+      selectBtn.querySelector("ion-icon").setAttribute("name", getSelection().has(teamNumber) ? "remove-circle" : "add-circle");
+    };
+    updateSelectIcon();
+    selectBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (actionBtns.classList.contains("hidden")) return;
+      const selection = getSelection();
+      if (selection.has(teamNumber)) selection.delete(teamNumber);
+      else selection.add(teamNumber);
+      saveSelection(selection);
+      updateSelectIcon();
+      // removing a team while viewing the selection should drop it from the list right away
+      if (lbSets[currentLbIndex].isSelection) renderLb();
+    });
+
     el.addEventListener("click", () => {
       if (inspectedTeam && inspectedTeam !== teamNumber) {
-        document.getElementById(`team-${inspectedTeam}`)?.querySelector("#action-btn").classList.add("hidden");
+        document.getElementById(`team-${inspectedTeam}`)?.querySelector("#action-btns").classList.add("hidden");
       }
-      actionBtn.classList.toggle("hidden");
+      actionBtns.classList.toggle("hidden");
       actionBtn.innerHTML = `<ion-icon class="ionicon" name="open-outline"></ion-icon> View Team Data`;
       inspectedTeam = teamNumber;
     });
@@ -279,6 +313,8 @@ export async function loadLeaderboard() {
     { label: "Local", columns: scoutedColumns },
   ].filter(({ columns }) => columns.length > 0);
   if (lbSets.length === 0) lbSets.push({ label: "Local", columns: scoutedColumns });
+  // selected teams with every column, so picks can be compared side by side
+  lbSets.push({ label: "Selection", columns: [...tbaColumns, ...scoutedColumns], isSelection: true });
   document.getElementById("nextLbBtn").classList.toggle("hidden", lbSets.length < 2);
   let currentLbIndex = 0;
 
@@ -286,14 +322,16 @@ export async function loadLeaderboard() {
     // clear rows
     teamList.querySelectorAll(".team:not(.template)").forEach((el) => el.remove());
 
-    const { label, columns } = lbSets[currentLbIndex];
+    const { label, columns, isSelection } = lbSets[currentLbIndex];
     document.getElementById("lb-header").textContent = label;
 
     LEADERBOARD_COLUMNS.length = 0;
     columns.forEach((c) => LEADERBOARD_COLUMNS.push(c));
     document.dispatchEvent(new CustomEvent("lb-columns-ready"));
 
+    const selection = getSelection();
     rows
+      .filter(({ teamKey }) => !isSelection || selection.has(teamKey.replace("frc", "")))
       .sort((a, b) => (a.stats.rank ?? 0) - (b.stats.rank ?? 0))
       .forEach(({ teamKey, stats }) => {
         const number = teamKey.replace("frc", "");

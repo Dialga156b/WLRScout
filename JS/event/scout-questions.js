@@ -69,16 +69,27 @@ export async function updateResponse(elementId, value, dontupdate) {
   }
 }
 
+// "question_id[state]" shows only while that question equals state, "!question_id[state]" hides while it does
+function parseDependency(dep) {
+  const match = String(dep).trim().match(/^(!?)([A-Za-z_]+)\[(.*)\]$/);
+  if (!match) return { negate: false, id: String(dep).trim(), state: null };
+  return { negate: match[1] === "!", id: match[2], state: match[3] };
+}
+
 function updateDependencyVisibility() {
   const offlineEnabled = localStorage.getItem("offlineQuestions") === "true";
   for (const { element, depends, isOffline } of dependentElements) {
-    const depHidden = depends.some((depId) => {
-      const meta = questionLookup[depId];
+    const depHidden = depends.some((dep) => {
+      const rule = parseDependency(dep);
+      const meta = questionLookup[rule.id];
       if (!meta) return false;
-      const currentValue = responses[meta.categoryId]?.[meta.questionIndex];
-      return meta.hideDependencies
-        ? meta.hideDependencies.includes(currentValue)
-        : currentValue !== meta.defaultState;
+      const currentValue = responses[meta.categoryId]?.[meta.questionIndex] ?? meta.defaultState;
+      if (rule.state === null) {
+        // old bare-id format: hidden once the question leaves its default (or hits a hide-dependencies value)
+        return meta.hideDependencies ? meta.hideDependencies.includes(currentValue) : currentValue !== meta.defaultState;
+      }
+      const matches = String(currentValue) === rule.state;
+      return rule.negate ? matches : !matches;
     });
     const offlineHidden = isOffline && !offlineEnabled;
 
